@@ -2,15 +2,15 @@
 
 ## Phase 1: Backend Discovery Foundation
 
-- [ ] Task 1: Build fixture-backed session discovery
+- [x] Task 1: Build fixture-backed session discovery
   - Acceptance:
-    - Active rollout files under `sessions/YYYY/MM/DD/` are discovered.
-    - Archived rollout files under `archived_sessions/` are discovered and marked `archived=true`.
-    - Session summaries include `id`, `title`, `preview`, `cwd`, `project_id`, `project_name`, `created_at`, `updated_at`, `archived`.
-    - Project grouping uses nearest `.git` ancestor for `cwd`; missing Git root falls back to exact `cwd`; missing `cwd` uses `Unknown project`.
-    - `session_index.jsonl` latest title wins when present; otherwise title falls back to preview or rollout filename.
+    - [x] Active rollout files under `sessions/YYYY/MM/DD/` are discovered.
+    - [x] Archived rollout files under `archived_sessions/` are discovered and marked `archived=true`.
+    - [x] Session summaries include `id`, `title`, `preview`, `cwd`, `project_id`, `project_name`, `created_at`, `updated_at`, `archived`.
+    - [x] Project grouping uses nearest `.git` ancestor for `cwd`; missing Git root falls back to exact `cwd`; missing `cwd` uses `Unknown project`.
+    - [x] `session_index.jsonl` latest title wins when present; otherwise title falls back to preview or rollout filename.
   - Verify:
-    - `pytest tests/test_codex_sessions.py`
+    - [x] `pytest tests/test_codex_sessions.py`
   - Files:
     - `server/codex_sessions.py`
     - `tests/test_codex_sessions.py`
