@@ -209,3 +209,35 @@ export interface HarmonyRenderResponse {
   display_string: string;
   partial_success_error_messages: string[];
 }
+
+export interface CodexProjectSummary {
+  id: string;
+  name: string;
+  path: string | null;
+  sessionCount: number;
+}
+
+export interface CodexProjectsResponse {
+  projects: CodexProjectSummary[];
+  warnings: string[];
+}
+
+export interface CodexSessionSummary {
+  id: string;
+  title: string;
+  preview: string;
+  cwd: string | null;
+  projectId: string;
+  projectName: string;
+  rolloutPath: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  archived: boolean;
+}
+
+export interface CodexSessionsResponse {
+  sessions: CodexSessionSummary[];
+  warnings: string[];
+}
+
+export type CodexSessionEvent = Record<string, unknown>;

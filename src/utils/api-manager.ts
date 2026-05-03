@@ -2,6 +2,9 @@ import { search as jmespathSearch } from 'jmespath';
 import type {
   BlobJSONLPayload,
   BlobJSONLResponse,
+  CodexProjectsResponse,
+  CodexSessionEvent,
+  CodexSessionsResponse,
   HarmonyRenderResponse,
   RefreshRendererListResponse
 } from '../types/common-types';
@@ -303,6 +306,58 @@ export class APIManager {
     }
 
     return (await response.json()) as HarmonyRenderResponse;
+  };
+
+  listCodexProjects = async (): Promise<CodexProjectsResponse> => {
+    const response = await fetch(`${this.apiBaseURL}codex-sessions/projects/`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return (await response.json()) as CodexProjectsResponse;
+  };
+
+  listCodexProjectSessions = async (
+    projectId: string
+  ): Promise<CodexSessionsResponse> => {
+    const queryPath = new URLSearchParams();
+    queryPath.set('projectId', projectId);
+
+    const response = await fetch(
+      `${this.apiBaseURL}codex-sessions/sessions/?${queryPath.toString()}`,
+      {
+        method: 'GET',
+        credentials: 'include'
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return (await response.json()) as CodexSessionsResponse;
+  };
+
+  readCodexSession = async (
+    sessionId: string
+  ): Promise<CodexSessionEvent[]> => {
+    const response = await fetch(
+      `${this.apiBaseURL}codex-sessions/sessions/${encodeURIComponent(sessionId)}/`,
+      {
+        method: 'GET',
+        credentials: 'include'
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return (await response.json()) as CodexSessionEvent[];
   };
 }
 

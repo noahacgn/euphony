@@ -62,15 +62,17 @@
 
 ## Phase 3: Frontend Client and Local Browser Skeleton
 
-- [ ] Task 4: Add frontend API client and types
+- [x] Task 4: Add frontend API client and types
   - Acceptance:
-    - `APIManager` can list local Codex projects.
-    - `APIManager` can list sessions for a project id.
-    - `APIManager` can read session detail by session id.
-    - Types represent backend responses without using arbitrary `any`.
-    - Browser-only manager is not extended to read local filesystem APIs.
+    - [x] `APIManager` can list local Codex projects.
+    - [x] `APIManager` can list sessions for a project id.
+    - [x] `APIManager` can read session detail by session id.
+    - [x] Types represent backend responses without using arbitrary `any`.
+    - [x] Browser-only manager is not extended to read local filesystem APIs.
   - Verify:
-    - `pnpm run build`
+    - [x] `node --test tests/frontend/api-manager.codex-sessions.test.mjs`
+    - [x] `uv run --with pytest python -m pytest`
+    - [x] `pnpm run build`
   - Files:
     - `src/utils/api-manager.ts`
     - `src/types/common-types.ts` or a new focused type file if justified
