@@ -36,7 +36,10 @@ import { NightjarToast } from '../toast/toast';
 import { EuphonyTokenWindow } from '../token-window/token-window';
 import type { LocalDataWorkerMessage } from './local-data-worker';
 import LocalDataWorkerInline from './local-data-worker?worker';
-import { loadLocalCodexBrowserState } from './local-codex-browser';
+import {
+  loadLocalCodexBrowserState,
+  loadLocalCodexSessionDetail
+} from './local-codex-browser';
 import { RequestWorker } from './request-worker';
 import { URLManager } from './url-manager';
 
@@ -157,10 +160,19 @@ export class EuphonyApp extends LitElement {
   selectedLocalCodexProjectId: string | null = null;
 
   @state()
+  selectedLocalCodexSessionId: string | null = null;
+
+  @state()
   localCodexWarnings: string[] = [];
 
   @state()
   localCodexErrorMessage = '';
+
+  @state()
+  localCodexDetailErrorMessage = '';
+
+  @state()
+  isLoadingLocalCodexSession = false;
 
   @state()
   dataType: DataType = DataType.CONVERSATION;
@@ -305,6 +317,8 @@ export class EuphonyApp extends LitElement {
     return this.localDataWorkerRequestCount++;
   }
   activeLocalDataWorkerRequestID: number | null = null;
+  localCodexSessionRequestCount = 0;
+  activeLocalCodexSessionRequestID: number | null = null;
   localDataWorkerPendingRequests = new Map<
     number,
     {
@@ -522,23 +536,46 @@ export class EuphonyApp extends LitElement {
   async refreshLocalCodexSessions(
     preferredProjectId: string | null = this.selectedLocalCodexProjectId
   ) {
+    const preferredSessionId =
+      preferredProjectId === this.selectedLocalCodexProjectId
+        ? this.selectedLocalCodexSessionId
+        : null;
+
     this.isLocalCodexBrowserMode = true;
     this.isLoadingData = true;
     this.isLoadingFromCache = false;
     this.isLoadingFromClipboard = false;
     this.clearRenderedData();
     this.dataType = DataType.CONVERSATION;
+    this.localCodexDetailErrorMessage = '';
+    this.isLoadingLocalCodexSession = false;
+    this.activeLocalCodexSessionRequestID = null;
 
     const localState = await loadLocalCodexBrowserState(
       this.apiManager,
-      preferredProjectId
+      preferredProjectId,
+      preferredSessionId
     );
 
     this.localCodexProjects = localState.projects;
     this.localCodexSessions = localState.sessions;
     this.selectedLocalCodexProjectId = localState.selectedProjectId;
+    this.selectedLocalCodexSessionId = localState.selectedSessionId;
     this.localCodexWarnings = localState.warnings;
     this.localCodexErrorMessage = localState.errorMessage;
+
+    if (
+      preferredSessionId !== null &&
+      localState.selectedSessionId === preferredSessionId
+    ) {
+      const selectedSession = localState.sessions.find(
+        session => session.id === preferredSessionId
+      );
+      if (selectedSession) {
+        await this.openLocalCodexSession(selectedSession, false);
+      }
+    }
+
     this.isLoadingData = false;
   }
 
@@ -1519,6 +1556,55 @@ export class EuphonyApp extends LitElement {
     );
   }
 
+  localCodexSessionClicked(session: CodexSessionSummary) {
+    this.openLocalCodexSession(session).then(
+      () => {},
+      () => {}
+    );
+  }
+
+  async openLocalCodexSession(
+    session: CodexSessionSummary,
+    shouldScrollToDetail = true
+  ) {
+    const requestID = this.localCodexSessionRequestCount++;
+    this.activeLocalCodexSessionRequestID = requestID;
+    this.isLocalCodexBrowserMode = true;
+    this.isLoadingLocalCodexSession = true;
+    this.selectedLocalCodexSessionId = session.id;
+    this.localCodexDetailErrorMessage = '';
+
+    const detailState = await loadLocalCodexSessionDetail(
+      this.apiManager,
+      session
+    );
+
+    if (requestID !== this.activeLocalCodexSessionRequestID) {
+      return;
+    }
+
+    this.selectedLocalCodexSessionId = detailState.selectedSessionId;
+    this.localCodexDetailErrorMessage = detailState.errorMessage;
+    this.codexSessionData =
+      detailState.sessionData.length > 0 ? [detailState.sessionData] : [];
+    this.allConversationData = [];
+    this.conversationData = [];
+    this.JSONData = [];
+    this.selectedConversationIDs = new Set();
+    this.dataType = DataType.CODEX;
+    this._totalConversationSize = this.codexSessionData.length;
+    this._totalConversationSizeIncludingUnfiltered =
+      this.codexSessionData.length;
+    this.isLoadingFromCache = false;
+    this.isLoadingFromClipboard = false;
+    this.isLoadingLocalCodexSession = false;
+
+    if (shouldScrollToDetail && this.codexSessionData.length > 0) {
+      await this.updateComplete;
+      this.scrollToConversation('#conversation-0');
+    }
+  }
+
   renderLocalCodexBrowser() {
     const selectedProject = this.localCodexProjects.find(
       project => project.id === this.selectedLocalCodexProjectId
@@ -1547,7 +1633,13 @@ export class EuphonyApp extends LitElement {
     const sessionRows = this.localCodexSessions.map(
       session => html`
         <li class="local-codex-session-row">
-          <article class="local-codex-session-content">
+          <button
+            class="local-codex-session-content"
+            ?is-selected=${session.id === this.selectedLocalCodexSessionId}
+            @click=${() => {
+              this.localCodexSessionClicked(session);
+            }}
+          >
             <span class="local-codex-session-main">
               <span class="local-codex-session-title">${session.title}</span>
               <span class="local-codex-session-preview"
@@ -1570,7 +1662,7 @@ export class EuphonyApp extends LitElement {
                 'Unknown time'}</time
               >
             </span>
-          </article>
+          </button>
         </li>
       `
     );
@@ -1617,6 +1709,20 @@ export class EuphonyApp extends LitElement {
               : html`<ul class="local-codex-session-list">
                   ${sessionRows}
                 </ul>`}
+            ${this.isLoadingLocalCodexSession
+              ? html`
+                  <div class="local-codex-detail-status" role="status">
+                    Loading selected session.
+                  </div>
+                `
+              : ''}
+            ${this.localCodexDetailErrorMessage !== ''
+              ? html`
+                  <div class="local-codex-detail-error" role="alert">
+                    ${this.localCodexDetailErrorMessage}
+                  </div>
+                `
+              : ''}
           </section>
         </div>
       `;
@@ -2394,8 +2500,19 @@ export class EuphonyApp extends LitElement {
         </div> `;
     }
 
+    const localCodexDetailTemplate =
+      this.isLocalCodexBrowserMode && this.codexSessionData.length > 0
+        ? html`
+            <div class="local-codex-rendered-session">
+              <div class="conversation-list" ?is-grid-view=${this.isGridView}>
+                ${conversationsTemplate}
+              </div>
+            </div>
+          `
+        : html``;
+
     const contentCenterTemplate = this.isLocalCodexBrowserMode
-      ? this.renderLocalCodexBrowser()
+      ? html`${this.renderLocalCodexBrowser()} ${localCodexDetailTemplate}`
       : html`
           <div
             class="grid-header"

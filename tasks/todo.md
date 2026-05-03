@@ -105,19 +105,24 @@
 
 ## Phase 4: Session Detail End-to-End
 
-- [ ] Task 6: Open and render one local Codex session
+- [x] Task 6: Open and render one local Codex session
   - Acceptance:
-    - Clicking a session fetches detail exactly for that session id.
-    - Successful detail read renders through existing `<euphony-codex>` content path.
-    - Detail read errors show a visible message without clearing the project/session list.
-    - Selected session state is visible in the browser.
-    - Manual refresh preserves selection when possible and clears it safely when the session disappears.
+    - [x] Clicking a session fetches detail exactly for that session id.
+    - [x] Successful detail read renders through existing `<euphony-codex>` content path.
+    - [x] Detail read errors show a visible message without clearing the project/session list.
+    - [x] Selected session state is visible in the browser.
+    - [x] Manual refresh preserves selection when possible and clears it safely when the session disappears.
   - Verify:
-    - `pnpm run build`
-    - Manual browser check: select project, select session, see Codex content
+    - [x] `node --test tests/frontend/local-codex-browser.test.mjs`
+    - [x] `node --test tests/frontend/api-manager.codex-sessions.test.mjs`
+    - [x] `uv run --with pytest python -m pytest`
+    - [x] `pnpm run build`
+    - [x] Manual browser check: select project, select session, see Codex content
   - Files:
     - `src/components/app/app.ts`
     - `src/components/app/app.css`
+    - `src/components/app/local-codex-browser.ts`
+    - `tests/frontend/local-codex-browser.test.mjs`
 
 - [ ] Task 7: Preserve legacy data loading flows
   - Acceptance:

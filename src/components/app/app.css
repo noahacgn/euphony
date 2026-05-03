@@ -728,13 +728,24 @@ button,
 }
 
 .local-codex-session-content {
+  width: 100%;
+  height: auto;
   display: flex;
   justify-content: space-between;
+  align-items: stretch;
   gap: 16px;
   padding: 10px 12px;
   border: 1px solid var(--gray-200);
   border-radius: var(--euphony-border-radius);
   background: white;
+  box-sizing: border-box;
+  line-height: 1.35;
+  text-align: left;
+
+  &[is-selected] {
+    border-color: var(--blue-300);
+    background: var(--blue-50);
+  }
 }
 
 .local-codex-session-main {
@@ -801,8 +812,39 @@ button,
   line-height: 1.45;
 }
 
+.local-codex-detail-status,
+.local-codex-detail-error {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--euphony-border-radius);
+  font-size: var(--font-d3);
+  line-height: 1.45;
+}
+
+.local-codex-detail-status {
+  border: 1px solid var(--blue-100);
+  color: var(--blue-800);
+  background: var(--blue-50);
+}
+
+.local-codex-detail-error {
+  border: 1px solid var(--red-100);
+  color: var(--red-800);
+  background: var(--red-50);
+}
+
+.local-codex-rendered-session {
+  width: min(1180px, calc(100vw - 48px));
+  display: flex;
+  justify-content: center;
+}
+
 @media (max-width: 760px) {
   .local-codex-browser {
+    width: min(100vw - 24px, 1180px);
+  }
+
+  .local-codex-rendered-session {
     width: min(100vw - 24px, 1180px);
   }
 

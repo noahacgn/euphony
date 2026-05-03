@@ -134,6 +134,110 @@ test('loadLocalCodexBrowserState keeps the requested project when it still exist
   assert.deepEqual(calls, ['project-b']);
 });
 
+test('loadLocalCodexBrowserState keeps the requested session when refresh still returns it', async () => {
+  const { loadLocalCodexBrowserState } = await loadLocalCodexBrowserModule();
+  const api = {
+    async listCodexProjects() {
+      return {
+        projects: [
+          {
+            id: 'project-a',
+            name: 'project-a',
+            path: null,
+            sessionCount: 2
+          }
+        ],
+        warnings: []
+      };
+    },
+    async listCodexProjectSessions(projectId) {
+      return {
+        sessions: [
+          {
+            id: 'session-1',
+            title: 'First session',
+            preview: 'First preview',
+            cwd: null,
+            projectId,
+            projectName: 'project-a',
+            rolloutPath: 'rollout-session-1.jsonl',
+            createdAt: null,
+            updatedAt: null,
+            archived: false
+          },
+          {
+            id: 'session-2',
+            title: 'Second session',
+            preview: 'Second preview',
+            cwd: null,
+            projectId,
+            projectName: 'project-a',
+            rolloutPath: 'rollout-session-2.jsonl',
+            createdAt: null,
+            updatedAt: null,
+            archived: false
+          }
+        ],
+        warnings: []
+      };
+    }
+  };
+
+  const state = await loadLocalCodexBrowserState(
+    api,
+    'project-a',
+    'session-2'
+  );
+
+  assert.equal(state.selectedSessionId, 'session-2');
+});
+
+test('loadLocalCodexBrowserState clears the requested session when refresh no longer returns it', async () => {
+  const { loadLocalCodexBrowserState } = await loadLocalCodexBrowserModule();
+  const api = {
+    async listCodexProjects() {
+      return {
+        projects: [
+          {
+            id: 'project-a',
+            name: 'project-a',
+            path: null,
+            sessionCount: 1
+          }
+        ],
+        warnings: []
+      };
+    },
+    async listCodexProjectSessions(projectId) {
+      return {
+        sessions: [
+          {
+            id: 'session-1',
+            title: 'First session',
+            preview: 'First preview',
+            cwd: null,
+            projectId,
+            projectName: 'project-a',
+            rolloutPath: 'rollout-session-1.jsonl',
+            createdAt: null,
+            updatedAt: null,
+            archived: false
+          }
+        ],
+        warnings: []
+      };
+    }
+  };
+
+  const state = await loadLocalCodexBrowserState(
+    api,
+    'project-a',
+    'missing-session'
+  );
+
+  assert.equal(state.selectedSessionId, null);
+});
+
 test('loadLocalCodexBrowserState returns an empty state when no projects exist', async () => {
   const { loadLocalCodexBrowserState } = await loadLocalCodexBrowserModule();
   const api = {
@@ -176,4 +280,79 @@ test('loadLocalCodexBrowserState surfaces backend failures as a clear error stat
   assert.match(state.errorMessage, /Failed to load local Codex sessions/);
   assert.match(state.errorMessage, /Start the local FastAPI backend/);
   assert.match(state.errorMessage, /ECONNREFUSED/);
+});
+
+test('loadLocalCodexSessionDetail reads only the selected session id', async () => {
+  const { loadLocalCodexSessionDetail } = await loadLocalCodexBrowserModule();
+  const calls = [];
+  const events = [
+    {
+      type: 'session_meta',
+      payload: {
+        id: 'session-2'
+      }
+    },
+    {
+      type: 'event_msg',
+      payload: {
+        type: 'user_message',
+        message: 'Open the selected session'
+      }
+    }
+  ];
+  const api = {
+    async readCodexSession(sessionId) {
+      calls.push(sessionId);
+      return events;
+    }
+  };
+  const session = {
+    id: 'session-2',
+    title: 'Second session',
+    preview: 'Second preview',
+    cwd: 'D:/IdeaProjects/euphony',
+    projectId: 'project-a',
+    projectName: 'project-a',
+    rolloutPath: 'rollout-session-2.jsonl',
+    createdAt: null,
+    updatedAt: null,
+    archived: false
+  };
+
+  const detail = await loadLocalCodexSessionDetail(api, session);
+
+  assert.deepEqual(calls, ['session-2']);
+  assert.equal(detail.selectedSessionId, 'session-2');
+  assert.deepEqual(detail.sessionData, events);
+  assert.equal(detail.errorMessage, '');
+});
+
+test('loadLocalCodexSessionDetail returns a visible error state without list data', async () => {
+  const { loadLocalCodexSessionDetail } = await loadLocalCodexBrowserModule();
+  const api = {
+    async readCodexSession() {
+      throw new Error('Malformed JSONL at line 4');
+    }
+  };
+  const session = {
+    id: 'broken-session',
+    title: 'Broken session',
+    preview: 'Broken preview',
+    cwd: null,
+    projectId: 'project-a',
+    projectName: 'project-a',
+    rolloutPath: 'rollout-broken-session.jsonl',
+    createdAt: null,
+    updatedAt: null,
+    archived: false
+  };
+
+  const detail = await loadLocalCodexSessionDetail(api, session);
+
+  assert.equal(detail.selectedSessionId, 'broken-session');
+  assert.deepEqual(detail.sessionData, []);
+  assert.match(detail.errorMessage, /Failed to load Codex session/);
+  assert.match(detail.errorMessage, /Broken session/);
+  assert.match(detail.errorMessage, /broken-session/);
+  assert.match(detail.errorMessage, /Malformed JSONL at line 4/);
 });
