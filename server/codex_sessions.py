@@ -127,17 +127,14 @@ def read_codex_session_events(
 def _discover_rollout_paths(codex_home: Path) -> list[tuple[Path, bool]]:
     rollout_paths: list[tuple[Path, bool]] = []
 
-    active_sessions_dir = codex_home / "sessions"
-    if active_sessions_dir.is_dir():
-        rollout_paths.extend(
-            (path, False) for path in active_sessions_dir.rglob("rollout-*.jsonl")
-        )
-
-    archived_sessions_dir = codex_home / "archived_sessions"
-    if archived_sessions_dir.is_dir():
-        rollout_paths.extend(
-            (path, True) for path in archived_sessions_dir.rglob("rollout-*.jsonl")
-        )
+    for rollout_dir, archived in (
+        (codex_home / "sessions", False),
+        (codex_home / "archived_sessions", True),
+    ):
+        if rollout_dir.is_dir():
+            rollout_paths.extend(
+                (path, archived) for path in rollout_dir.rglob("rollout-*.jsonl")
+            )
 
     return sorted(rollout_paths, key=lambda item: str(item[0]))
 
@@ -146,7 +143,7 @@ def _find_rollout_path_for_session(session_id: str, codex_home: Path) -> Path | 
     if session_id == "":
         return None
 
-    for rollout_path, _archived in _discover_rollout_paths(codex_home):
+    for rollout_path, _ in _discover_rollout_paths(codex_home):
         if session_id in _read_session_ids_for_whitelist(rollout_path):
             return rollout_path
 
@@ -265,15 +262,8 @@ def _scan_rollout_summary(path: Path) -> _RolloutSummaryFields:
                 try:
                     parsed = json.loads(stripped_line)
                 except json.JSONDecodeError as exc:
-                    warning = (
-                        f"Failed to parse JSONL in {path} at line "
-                        f"{line_number}: {exc.msg}."
-                    )
-                    if (
-                        first_timestamp is None
-                        and session_meta == {}
-                        and preview == ""
-                    ):
+                    warning = _jsonl_parse_error(path, line_number, exc)
+                    if first_timestamp is None and not session_meta and preview == "":
                         raise RolloutParseError(warning) from exc
                     return _RolloutSummaryFields(
                         session_meta=session_meta,
@@ -293,7 +283,7 @@ def _scan_rollout_summary(path: Path) -> _RolloutSummaryFields:
 
                 if parsed.get("type") == "session_meta":
                     payload = parsed.get("payload")
-                    if session_meta == {} and isinstance(payload, dict):
+                    if not session_meta and isinstance(payload, dict):
                         session_meta = payload
 
                 if preview == "":
@@ -321,7 +311,7 @@ def _read_jsonl_objects(path: Path) -> list[dict[str, Any]]:
                     parsed = json.loads(stripped_line)
                 except json.JSONDecodeError as exc:
                     raise RolloutParseError(
-                        f"Failed to parse JSONL in {path} at line {line_number}: {exc.msg}."
+                        _jsonl_parse_error(path, line_number, exc)
                     ) from exc
                 if isinstance(parsed, dict):
                     rows.append(parsed)
@@ -331,14 +321,12 @@ def _read_jsonl_objects(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _find_session_meta_payload(events: list[dict[str, Any]]) -> dict[str, Any]:
-    for event in events:
-        if event.get("type") != "session_meta":
-            continue
-        payload = event.get("payload")
-        if isinstance(payload, dict):
-            return payload
-    return {}
+def _jsonl_parse_error(
+    path: Path,
+    line_number: int,
+    exc: json.JSONDecodeError,
+) -> str:
+    return f"Failed to parse JSONL in {path} at line {line_number}: {exc.msg}."
 
 
 def _session_id_from_filename(path: Path) -> str | None:
@@ -373,7 +361,7 @@ def _project_from_cwd(cwd: str | None) -> tuple[str, str]:
 
 
 def _find_git_root(cwd: Path) -> Path | None:
-    for candidate in [cwd, *cwd.parents]:
+    for candidate in (cwd, *cwd.parents):
         if (candidate / ".git").exists():
             return candidate
     return None
@@ -415,8 +403,11 @@ def _text_from_value(value: Any) -> str:
 def _get_first_text(source: dict[str, Any], keys: list[str]) -> str | None:
     for key in keys:
         value = source.get(key)
-        if isinstance(value, str) and value.strip() != "":
-            return value.strip()
+        if not isinstance(value, str):
+            continue
+        stripped_value = value.strip()
+        if stripped_value != "":
+            return stripped_value
     return None
 
 
