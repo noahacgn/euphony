@@ -96,6 +96,41 @@ test('loadLocalCodexBrowserState selects the first project and loads only summar
   ]);
 });
 
+test('loadLocalCodexBrowserState can force-refresh the project scan', async () => {
+  const { loadLocalCodexBrowserState } = await loadLocalCodexBrowserModule();
+  const calls = [];
+  const api = {
+    async listCodexProjects(options) {
+      calls.push(['projects', options]);
+      return {
+        projects: [
+          {
+            id: 'project-a',
+            name: 'project-a',
+            path: null,
+            sessionCount: 1
+          }
+        ],
+        warnings: []
+      };
+    },
+    async listCodexProjectSessions(projectId) {
+      calls.push(['sessions', projectId]);
+      return {
+        sessions: [],
+        warnings: []
+      };
+    }
+  };
+
+  await loadLocalCodexBrowserState(api, null, null, true);
+
+  assert.deepEqual(calls, [
+    ['projects', { refresh: true }],
+    ['sessions', 'project-a']
+  ]);
+});
+
 test('loadLocalCodexBrowserState keeps the requested project when it still exists', async () => {
   const { loadLocalCodexBrowserState } = await loadLocalCodexBrowserModule();
   const calls = [];
@@ -183,11 +218,7 @@ test('loadLocalCodexBrowserState keeps the requested session when refresh still 
     }
   };
 
-  const state = await loadLocalCodexBrowserState(
-    api,
-    'project-a',
-    'session-2'
-  );
+  const state = await loadLocalCodexBrowserState(api, 'project-a', 'session-2');
 
   assert.equal(state.selectedSessionId, 'session-2');
 });
@@ -259,6 +290,69 @@ test('loadLocalCodexBrowserState returns an empty state when no projects exist',
   assert.deepEqual(state.warnings, ['codex home empty']);
   assert.equal(state.selectedProjectId, null);
   assert.equal(state.errorMessage, '');
+});
+
+test('loadLocalCodexProjectSessionsState switches projects without reloading project summaries', async () => {
+  const { loadLocalCodexProjectSessionsState } =
+    await loadLocalCodexBrowserModule();
+  const calls = [];
+  const api = {
+    async listCodexProjects() {
+      calls.push(['projects']);
+      throw new Error('projects should not be reloaded during project switch');
+    },
+    async listCodexProjectSessions(projectId) {
+      calls.push(['sessions', projectId]);
+      return {
+        sessions: [
+          {
+            id: 'session-2',
+            title: 'Second session',
+            preview: 'Second preview',
+            cwd: null,
+            projectId,
+            projectName: 'project-b',
+            rolloutPath: 'rollout-session-2.jsonl',
+            createdAt: null,
+            updatedAt: null,
+            archived: false
+          }
+        ],
+        warnings: ['session warning']
+      };
+    }
+  };
+
+  const state = await loadLocalCodexProjectSessionsState(api, 'project-b', [
+    'project warning'
+  ]);
+
+  assert.equal(state.selectedProjectId, 'project-b');
+  assert.equal(state.selectedSessionId, null);
+  assert.equal(state.sessions.length, 1);
+  assert.deepEqual(state.warnings, ['project warning', 'session warning']);
+  assert.equal(state.errorMessage, '');
+  assert.deepEqual(calls, [['sessions', 'project-b']]);
+});
+
+test('loadLocalCodexProjectSessionsState keeps project warnings when sessions fail', async () => {
+  const { loadLocalCodexProjectSessionsState } =
+    await loadLocalCodexBrowserModule();
+  const api = {
+    async listCodexProjectSessions() {
+      throw new Error('HTTP error! status: 500');
+    }
+  };
+
+  const state = await loadLocalCodexProjectSessionsState(api, 'project-b', [
+    'project warning'
+  ]);
+
+  assert.deepEqual(state.sessions, []);
+  assert.equal(state.selectedProjectId, 'project-b');
+  assert.deepEqual(state.warnings, ['project warning']);
+  assert.match(state.errorMessage, /Failed to load Codex sessions for project/);
+  assert.match(state.errorMessage, /project-b/);
 });
 
 test('loadLocalCodexBrowserState surfaces backend failures as a clear error state', async () => {

@@ -7,7 +7,9 @@ import type {
 } from '../../types/common-types';
 
 export interface LocalCodexBrowserListAPI {
-  listCodexProjects: () => Promise<CodexProjectsResponse>;
+  listCodexProjects: (options?: {
+    refresh?: boolean;
+  }) => Promise<CodexProjectsResponse>;
   listCodexProjectSessions: (
     projectId: string
   ) => Promise<CodexSessionsResponse>;
@@ -22,6 +24,17 @@ export interface LocalCodexBrowserState {
   sessions: CodexSessionSummary[];
   selectedProjectId: string | null;
   selectedSessionId: string | null;
+  projectWarnings: string[];
+  sessionWarnings: string[];
+  warnings: string[];
+  errorMessage: string;
+}
+
+export interface LocalCodexProjectSessionsState {
+  sessions: CodexSessionSummary[];
+  selectedProjectId: string;
+  selectedSessionId: string | null;
+  sessionWarnings: string[];
   warnings: string[];
   errorMessage: string;
 }
@@ -31,6 +44,10 @@ export interface LocalCodexSessionDetailState {
   sessionData: CodexSessionEvent[];
   errorMessage: string;
 }
+
+const mergeWarnings = (...warningGroups: string[][]): string[] => [
+  ...new Set(warningGroups.flat())
+];
 
 const buildLocalCodexErrorMessage = (error: unknown): string => {
   const errorText = error instanceof Error ? error.message : String(error);
@@ -53,13 +70,28 @@ const buildLocalCodexDetailErrorMessage = (
   );
 };
 
+const buildLocalCodexProjectSessionsErrorMessage = (
+  projectId: string,
+  error: unknown
+): string => {
+  const errorText = error instanceof Error ? error.message : String(error);
+  return (
+    `Failed to load Codex sessions for project "${projectId}". ` +
+    'Refresh the local browser and select the project again. ' +
+    `Details: ${errorText}`
+  );
+};
+
 export const loadLocalCodexBrowserState = async (
   api: LocalCodexBrowserListAPI,
   preferredProjectId: string | null = null,
-  preferredSessionId: string | null = null
+  preferredSessionId: string | null = null,
+  forceRefresh = false
 ): Promise<LocalCodexBrowserState> => {
   try {
-    const projectsResponse = await api.listCodexProjects();
+    const projectsResponse = await api.listCodexProjects({
+      refresh: forceRefresh
+    });
     const selectedProject =
       projectsResponse.projects.find(
         project => project.id === preferredProjectId
@@ -73,6 +105,8 @@ export const loadLocalCodexBrowserState = async (
         sessions: [],
         selectedProjectId: null,
         selectedSessionId: null,
+        projectWarnings: projectsResponse.warnings,
+        sessionWarnings: [],
         warnings: projectsResponse.warnings,
         errorMessage: ''
       };
@@ -91,7 +125,12 @@ export const loadLocalCodexBrowserState = async (
       sessions: sessionsResponse.sessions,
       selectedProjectId: selectedProject.id,
       selectedSessionId: selectedSession?.id ?? null,
-      warnings: [...projectsResponse.warnings, ...sessionsResponse.warnings],
+      projectWarnings: projectsResponse.warnings,
+      sessionWarnings: sessionsResponse.warnings,
+      warnings: mergeWarnings(
+        projectsResponse.warnings,
+        sessionsResponse.warnings
+      ),
       errorMessage: ''
     };
   } catch (error) {
@@ -100,8 +139,37 @@ export const loadLocalCodexBrowserState = async (
       sessions: [],
       selectedProjectId: null,
       selectedSessionId: null,
+      projectWarnings: [],
+      sessionWarnings: [],
       warnings: [],
       errorMessage: buildLocalCodexErrorMessage(error)
+    };
+  }
+};
+
+export const loadLocalCodexProjectSessionsState = async (
+  api: LocalCodexBrowserListAPI,
+  projectId: string,
+  projectWarnings: string[] = []
+): Promise<LocalCodexProjectSessionsState> => {
+  try {
+    const sessionsResponse = await api.listCodexProjectSessions(projectId);
+    return {
+      sessions: sessionsResponse.sessions,
+      selectedProjectId: projectId,
+      selectedSessionId: null,
+      sessionWarnings: sessionsResponse.warnings,
+      warnings: mergeWarnings(projectWarnings, sessionsResponse.warnings),
+      errorMessage: ''
+    };
+  } catch (error) {
+    return {
+      sessions: [],
+      selectedProjectId: projectId,
+      selectedSessionId: null,
+      sessionWarnings: [],
+      warnings: projectWarnings,
+      errorMessage: buildLocalCodexProjectSessionsErrorMessage(projectId, error)
     };
   }
 };

@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 from codex_sessions import (
     CodexProjectSummary,
+    CodexSessionScanResult,
     CodexSessionNotFoundError,
     CodexSessionSummary,
     RolloutParseError,
@@ -59,6 +60,8 @@ LOCAL_ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1"}
 client = AsyncOpenAI(api_key=os.environ.get("OPEN_AI_API_KEY"))
 _translation_semaphore = asyncio.Semaphore(TRANSLATION_MAX_CONCURRENCY)
 _inflight_translations: dict[str, asyncio.Task["TranslationResult"]] = {}
+_codex_scan_cache: CodexSessionScanResult | None = None
+_codex_scan_cache_lock = asyncio.Lock()
 
 
 class TranslationRequestBody(BaseModel):
@@ -193,6 +196,24 @@ def _assert_local_codex_request(request: Request) -> None:
                 "a local origin."
             ),
         )
+
+
+async def _get_codex_session_scan(
+    *,
+    force_refresh: bool = False,
+) -> CodexSessionScanResult:
+    global _codex_scan_cache
+
+    if not force_refresh and _codex_scan_cache is not None:
+        return _codex_scan_cache
+
+    async with _codex_scan_cache_lock:
+        if not force_refresh and _codex_scan_cache is not None:
+            return _codex_scan_cache
+
+        scan = await asyncio.to_thread(scan_codex_sessions)
+        _codex_scan_cache = scan
+        return scan
 
 
 def normalize_harmony_content(raw_content: Any, role: HarmonyRole) -> list[Any]:
@@ -412,7 +433,8 @@ async def ping() -> dict[str, str]:
 )
 async def get_codex_session_projects(request: Request) -> CodexProjectsAPIResponse:
     _assert_local_codex_request(request)
-    scan = await asyncio.to_thread(scan_codex_sessions)
+    force_refresh = request.query_params.get("refresh", "").lower() == "true"
+    scan = await _get_codex_session_scan(force_refresh=force_refresh)
     return CodexProjectsAPIResponse(
         projects=[
             _to_codex_project_api_response(project) for project in scan.projects
@@ -437,7 +459,7 @@ async def get_codex_project_sessions(
             detail="Failed to list Codex sessions: projectId must not be empty.",
         )
 
-    scan = await asyncio.to_thread(scan_codex_sessions)
+    scan = await _get_codex_session_scan()
     known_project_ids = {project.id for project in scan.projects}
     if requested_project_id not in known_project_ids:
         raise HTTPException(

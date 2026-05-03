@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 SERVER_DIR = Path(__file__).resolve().parents[1] / "server"
 sys.path.insert(0, str(SERVER_DIR))
 
-from codex_sessions import (
+# 测试需要先把 server 目录加入 sys.path，才能按生产模块名导入。
+from codex_sessions import (  # noqa: E402
     CodexSessionNotFoundError,
     RolloutParseError,
     read_codex_session_events,
@@ -490,6 +491,87 @@ def test_codex_session_api_lists_projects_sessions_and_detail(
     detail_response = client.get("/codex-sessions/sessions/api-active/")
     assert detail_response.status_code == 200
     assert detail_response.json() == active_events
+
+
+def test_codex_session_api_reuses_scan_until_explicit_refresh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    (project_root / ".git").mkdir(parents=True)
+
+    first_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T17-00-00-first-session.jsonl"
+    )
+    second_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T17-10-00-second-session.jsonl"
+    )
+    write_jsonl(
+        first_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T17:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "first-session", "cwd": str(project_root)},
+            }
+        ],
+    )
+
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    app_module = load_fastapi_main(monkeypatch)
+    client = TestClient(app_module.fastapi_app, base_url="http://127.0.0.1:8020")
+
+    project_id = str(project_root.resolve())
+    first_projects_response = client.get("/codex-sessions/projects/")
+    assert first_projects_response.status_code == 200
+    assert first_projects_response.json()["projects"][0]["sessionCount"] == 1
+
+    write_jsonl(
+        second_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T17:10:00Z",
+                "type": "session_meta",
+                "payload": {"id": "second-session", "cwd": str(project_root)},
+            }
+        ],
+    )
+
+    cached_sessions_response = client.get(
+        "/codex-sessions/sessions/",
+        params={"projectId": project_id},
+    )
+    assert cached_sessions_response.status_code == 200
+    assert {
+        session["id"] for session in cached_sessions_response.json()["sessions"]
+    } == {"first-session"}
+
+    refreshed_projects_response = client.get(
+        "/codex-sessions/projects/",
+        params={"refresh": "true"},
+    )
+    assert refreshed_projects_response.status_code == 200
+    assert refreshed_projects_response.json()["projects"][0]["sessionCount"] == 2
+
+    refreshed_sessions_response = client.get(
+        "/codex-sessions/sessions/",
+        params={"projectId": project_id},
+    )
+    assert refreshed_sessions_response.status_code == 200
+    assert {
+        session["id"] for session in refreshed_sessions_response.json()["sessions"]
+    } == {"first-session", "second-session"}
 
 
 def test_codex_session_api_errors_are_actionable(

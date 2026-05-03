@@ -134,6 +134,33 @@ test('APIManager reads local Codex projects, sessions, and detail through backen
   }
 });
 
+test('APIManager sends refresh=true only for explicit local Codex refreshes', async () => {
+  const { APIManager } = await loadAPIManagerModule();
+  const requestedURLs = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    requestedURLs.push(String(input));
+    return Response.json({
+      projects: [],
+      warnings: []
+    });
+  };
+
+  try {
+    const manager = new APIManager('http://localhost:8020/');
+
+    await manager.listCodexProjects();
+    await manager.listCodexProjects({ refresh: true });
+
+    assert.deepEqual(requestedURLs, [
+      'http://localhost:8020/codex-sessions/projects/',
+      'http://localhost:8020/codex-sessions/projects/?refresh=true'
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('BrowserAPIManager does not expose local Codex session APIs', async () => {
   const { BrowserAPIManager } = await loadAPIManagerModule();
   const manager = new BrowserAPIManager();

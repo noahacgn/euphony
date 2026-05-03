@@ -38,6 +38,7 @@ import type { LocalDataWorkerMessage } from './local-data-worker';
 import LocalDataWorkerInline from './local-data-worker?worker';
 import {
   loadLocalCodexBrowserState,
+  loadLocalCodexProjectSessionsState,
   loadLocalCodexSessionDetail
 } from './local-codex-browser';
 import { RequestWorker } from './request-worker';
@@ -166,7 +167,16 @@ export class EuphonyApp extends LitElement {
   localCodexWarnings: string[] = [];
 
   @state()
+  localCodexProjectWarnings: string[] = [];
+
+  @state()
+  isLoadingLocalCodexSessions = false;
+
+  @state()
   localCodexErrorMessage = '';
+
+  @state()
+  localCodexSessionsErrorMessage = '';
 
   @state()
   localCodexDetailErrorMessage = '';
@@ -536,7 +546,8 @@ export class EuphonyApp extends LitElement {
   }
 
   async refreshLocalCodexSessions(
-    preferredProjectId: string | null = this.selectedLocalCodexProjectId
+    preferredProjectId: string | null = this.selectedLocalCodexProjectId,
+    forceRefresh = false
   ) {
     const preferredSessionId =
       preferredProjectId === this.selectedLocalCodexProjectId
@@ -550,19 +561,23 @@ export class EuphonyApp extends LitElement {
     this.clearRenderedData();
     this.dataType = DataType.CONVERSATION;
     this.localCodexDetailErrorMessage = '';
+    this.localCodexSessionsErrorMessage = '';
+    this.isLoadingLocalCodexSessions = false;
     this.isLoadingLocalCodexSession = false;
     this.activeLocalCodexSessionRequestID = null;
 
     const localState = await loadLocalCodexBrowserState(
       this.apiManager,
       preferredProjectId,
-      preferredSessionId
+      preferredSessionId,
+      forceRefresh
     );
 
     this.localCodexProjects = localState.projects;
     this.localCodexSessions = localState.sessions;
     this.selectedLocalCodexProjectId = localState.selectedProjectId;
     this.selectedLocalCodexSessionId = localState.selectedSessionId;
+    this.localCodexProjectWarnings = localState.projectWarnings;
     this.localCodexWarnings = localState.warnings;
     this.localCodexErrorMessage = localState.errorMessage;
 
@@ -579,6 +594,38 @@ export class EuphonyApp extends LitElement {
     }
 
     this.isLoadingData = false;
+  }
+
+  async loadLocalCodexProjectSessions(projectId: string) {
+    this.isLocalCodexBrowserMode = true;
+    this.isLoadingLocalCodexSessions = true;
+    this.isLoadingLocalCodexSession = false;
+    this.activeLocalCodexSessionRequestID = null;
+    this.selectedLocalCodexProjectId = projectId;
+    this.selectedLocalCodexSessionId = null;
+    this.localCodexSessions = [];
+    this.localCodexErrorMessage = '';
+    this.localCodexSessionsErrorMessage = '';
+    this.localCodexDetailErrorMessage = '';
+    this.clearRenderedData();
+    this.dataType = DataType.CONVERSATION;
+
+    const localState = await loadLocalCodexProjectSessionsState(
+      this.apiManager,
+      projectId,
+      this.localCodexProjectWarnings
+    );
+
+    if (projectId !== this.selectedLocalCodexProjectId) {
+      return;
+    }
+
+    this.localCodexSessions = localState.sessions;
+    this.selectedLocalCodexProjectId = localState.selectedProjectId;
+    this.selectedLocalCodexSessionId = localState.selectedSessionId;
+    this.localCodexWarnings = localState.warnings;
+    this.localCodexSessionsErrorMessage = localState.errorMessage;
+    this.isLoadingLocalCodexSessions = false;
   }
 
   //==========================================================================||
@@ -1552,7 +1599,7 @@ export class EuphonyApp extends LitElement {
       return;
     }
 
-    this.refreshLocalCodexSessions(projectId).then(
+    this.loadLocalCodexProjectSessions(projectId).then(
       () => {},
       () => {}
     );
@@ -1702,15 +1749,23 @@ export class EuphonyApp extends LitElement {
                 >${NUM_FORMATTER(this.localCodexSessions.length)} sessions</span
               >
             </div>
-            ${this.localCodexSessions.length === 0
+            ${this.localCodexSessionsErrorMessage !== ''
               ? html`
-                  <div class="local-codex-state-message" role="status">
-                    No sessions found for this project.
+                  <div class="local-codex-detail-error" role="alert">
+                    ${this.localCodexSessionsErrorMessage}
                   </div>
                 `
-              : html`<ul class="local-codex-session-list">
-                  ${sessionRows}
-                </ul>`}
+              : this.localCodexSessions.length === 0
+                ? html`
+                    <div class="local-codex-state-message" role="status">
+                      ${this.isLoadingLocalCodexSessions
+                        ? 'Loading sessions for this project.'
+                        : 'No sessions found for this project.'}
+                    </div>
+                  `
+                : html`<ul class="local-codex-session-list">
+                    ${sessionRows}
+                  </ul>`}
             ${this.isLoadingLocalCodexSession
               ? html`
                   <div class="local-codex-detail-status" role="status">
@@ -1742,7 +1797,10 @@ export class EuphonyApp extends LitElement {
           <button
             class="button local-codex-refresh-button"
             @click=${() => {
-              this.refreshLocalCodexSessions().then(
+              this.refreshLocalCodexSessions(
+                this.selectedLocalCodexProjectId,
+                true
+              ).then(
                 () => {},
                 () => {}
               );

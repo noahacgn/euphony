@@ -318,9 +318,17 @@ export class APIManager {
     return (await response.json()) as HarmonyRenderResponse;
   };
 
-  listCodexProjects = async (): Promise<CodexProjectsResponse> => {
+  listCodexProjects = async (
+    options: { refresh?: boolean } = {}
+  ): Promise<CodexProjectsResponse> => {
+    const queryPath = new URLSearchParams();
+    if (options.refresh) {
+      queryPath.set('refresh', 'true');
+    }
+
+    const queryString = queryPath.toString();
     return this.getLocalCodexJSON<CodexProjectsResponse>(
-      'codex-sessions/projects/'
+      `codex-sessions/projects/${queryString === '' ? '' : `?${queryString}`}`
     );
   };
 
@@ -681,9 +689,8 @@ Rules summary:
     conversation: string,
     renderer: string
   ): Promise<HarmonyRenderResponse> => {
-    const { renderHarmonyConversationInBrowser } = await import(
-      './harmony-render'
-    );
+    const { renderHarmonyConversationInBrowser } =
+      await import('./harmony-render');
     return renderHarmonyConversationInBrowser(conversation, renderer);
   };
 }
