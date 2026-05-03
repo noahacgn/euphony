@@ -3,10 +3,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 SERVER_DIR = Path(__file__).resolve().parents[1] / "server"
 sys.path.insert(0, str(SERVER_DIR))
 
-from codex_sessions import scan_codex_sessions
+from codex_sessions import (
+    CodexSessionNotFoundError,
+    RolloutParseError,
+    read_codex_session_events,
+    scan_codex_sessions,
+)
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -157,3 +164,142 @@ def test_discovers_active_and_archived_rollouts_grouped_by_project(
     assert projects_by_id[str(project_root.resolve())].session_count == 1
     assert projects_by_id[str(fallback_cwd.resolve())].session_count == 1
     assert projects_by_id["unknown"].session_count == 1
+
+
+def test_reads_known_session_events_from_discovered_whitelist(tmp_path: Path) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    (project_root / ".git").mkdir(parents=True)
+
+    rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T11-00-00-detail-session.jsonl"
+    )
+    events = [
+        {
+            "timestamp": "2026-05-03T11:00:00Z",
+            "type": "session_meta",
+            "payload": {"id": "detail-session", "cwd": str(project_root)},
+        },
+        {
+            "timestamp": "2026-05-03T11:01:00Z",
+            "type": "event_msg",
+            "payload": {"type": "user_message", "message": "打开这个会话"},
+        },
+        {
+            "timestamp": "2026-05-03T11:02:00Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "已打开"}],
+            },
+        },
+    ]
+    write_jsonl(rollout, events)
+
+    assert read_codex_session_events("detail-session", codex_home) == events
+
+
+def test_unknown_session_id_returns_controlled_not_found_error(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    outside_rollout = tmp_path / "outside" / "rollout-2026-05-03T12-00-00-secret.jsonl"
+    write_jsonl(
+        outside_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T12:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "secret-session"},
+            }
+        ],
+    )
+
+    with pytest.raises(CodexSessionNotFoundError) as exc_info:
+        read_codex_session_events(str(outside_rollout), codex_home)
+
+    message = str(exc_info.value)
+    assert str(codex_home.resolve()) in message
+    assert "Refresh the Codex session list" in message
+
+
+def test_malformed_detail_read_reports_session_and_rollout_context(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T13-00-00-broken-session.jsonl"
+    )
+    rollout.parent.mkdir(parents=True, exist_ok=True)
+    rollout.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-05-03T13:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "broken-session"},
+            }
+        )
+        + "\n"
+        + "{bad json}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RolloutParseError) as exc_info:
+        read_codex_session_events("broken-session", codex_home)
+
+    message = str(exc_info.value)
+    assert "broken-session" in message
+    assert str(rollout.resolve()) in message
+    assert "line 2" in message
+
+
+def test_scan_excludes_malformed_rollouts_and_keeps_valid_sessions(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    valid_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T14-00-00-valid-session.jsonl"
+    )
+    broken_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T14-10-00-broken-session.jsonl"
+    )
+    write_jsonl(
+        valid_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T14:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "valid-session"},
+            }
+        ],
+    )
+    broken_rollout.parent.mkdir(parents=True, exist_ok=True)
+    broken_rollout.write_text("{bad json}\n", encoding="utf-8")
+
+    scan = scan_codex_sessions(codex_home)
+
+    assert [session.id for session in scan.sessions] == ["valid-session"]
+    assert len(scan.warnings) == 1
+    assert str(broken_rollout.resolve()) in scan.warnings[0]
+    assert "line 1" in scan.warnings[0]

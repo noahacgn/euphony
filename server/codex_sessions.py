@@ -45,6 +45,10 @@ class RolloutParseError(ValueError):
     pass
 
 
+class CodexSessionNotFoundError(LookupError):
+    pass
+
+
 def resolve_codex_home(codex_home: Path | str | None = None) -> Path:
     raw_codex_home = codex_home
     if raw_codex_home is None:
@@ -83,6 +87,33 @@ def scan_codex_sessions(codex_home: Path | str | None = None) -> CodexSessionSca
     return CodexSessionScanResult(projects=projects, sessions=sessions, warnings=warnings)
 
 
+def read_codex_session_events(
+    session_id: str,
+    codex_home: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    resolved_codex_home = resolve_codex_home(codex_home)
+    requested_session_id = session_id.strip()
+    rollout_path = _find_rollout_path_for_session(
+        session_id=requested_session_id,
+        codex_home=resolved_codex_home,
+    )
+    if rollout_path is None:
+        raise CodexSessionNotFoundError(
+            "Failed to read Codex session "
+            f"{requested_session_id!r} from {resolved_codex_home}: session id is not "
+            "known from the discovered rollout whitelist. Refresh the Codex session "
+            "list and select a session returned by the local backend."
+        )
+
+    try:
+        return _read_jsonl_objects(rollout_path)
+    except RolloutParseError as exc:
+        raise RolloutParseError(
+            "Failed to read Codex session "
+            f"{requested_session_id!r} from {rollout_path.resolve()}: {exc}"
+        ) from exc
+
+
 def _discover_rollout_paths(codex_home: Path) -> list[tuple[Path, bool]]:
     rollout_paths: list[tuple[Path, bool]] = []
 
@@ -99,6 +130,54 @@ def _discover_rollout_paths(codex_home: Path) -> list[tuple[Path, bool]]:
         )
 
     return sorted(rollout_paths, key=lambda item: str(item[0]))
+
+
+def _find_rollout_path_for_session(session_id: str, codex_home: Path) -> Path | None:
+    if session_id == "":
+        return None
+
+    for rollout_path, _archived in _discover_rollout_paths(codex_home):
+        if session_id in _read_session_ids_for_whitelist(rollout_path):
+            return rollout_path
+
+    return None
+
+
+def _read_session_ids_for_whitelist(path: Path) -> set[str]:
+    session_ids: set[str] = set()
+    filename_id = _session_id_from_filename(path)
+    if filename_id is not None:
+        session_ids.add(filename_id)
+
+    session_meta_id = _read_session_meta_id(path)
+    if session_meta_id is not None:
+        session_ids.add(session_meta_id)
+
+    return session_ids
+
+
+def _read_session_meta_id(path: Path) -> str | None:
+    try:
+        with path.open(encoding="utf-8") as file:
+            for line in file:
+                stripped_line = line.strip()
+                if stripped_line == "":
+                    continue
+                try:
+                    parsed = json.loads(stripped_line)
+                except json.JSONDecodeError:
+                    return None
+                if not isinstance(parsed, dict):
+                    continue
+                if parsed.get("type") != "session_meta":
+                    continue
+                payload = parsed.get("payload")
+                if isinstance(payload, dict):
+                    return _get_first_text(payload, ["id"])
+    except OSError:
+        return None
+
+    return None
 
 
 def _read_session_index_titles(codex_home: Path) -> dict[str, str]:

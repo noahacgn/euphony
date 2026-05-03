@@ -16,15 +16,15 @@
     - `tests/test_codex_sessions.py`
     - `tests/fixtures/codex_sessions/...`
 
-- [ ] Task 2: Add whitelist-safe session content reads
+- [x] Task 2: Add whitelist-safe session content reads
   - Acceptance:
-    - Known session id returns full rollout event objects in original order.
-    - Unknown session id returns a controlled not-found error.
-    - Malformed JSONL in detail read returns a clear error with file/session context.
-    - List scanning tolerates malformed rollout files by excluding or warning about the bad file without breaking all projects.
-    - No public helper accepts frontend-supplied arbitrary file paths for reads.
+    - [x] Known session id returns full rollout event objects in original order.
+    - [x] Unknown session id returns a controlled not-found error.
+    - [x] Malformed JSONL in detail read returns a clear error with file/session context.
+    - [x] List scanning tolerates malformed rollout files by excluding or warning about the bad file without breaking all projects.
+    - [x] No public helper accepts frontend-supplied arbitrary file paths for reads.
   - Verify:
-    - `pytest tests/test_codex_sessions.py`
+    - [x] `pytest tests/test_codex_sessions.py`
   - Files:
     - `server/codex_sessions.py`
     - `tests/test_codex_sessions.py`
@@ -32,10 +32,10 @@
 
 ## Checkpoint: Backend Foundation
 
-- [ ] `pytest tests/test_codex_sessions.py` passes.
-- [ ] Parser behavior matches `SPEC.md` boundaries.
-- [ ] No frontend or app behavior changed yet.
-- [ ] Human review if parser contract changed from the plan.
+- [x] `pytest tests/test_codex_sessions.py` passes.
+- [x] Parser behavior matches `SPEC.md` boundaries.
+- [x] No frontend or app behavior changed yet.
+- [x] Human review not required; parser contract stayed within the plan.
 
 ## Phase 2: Backend API Contract
 
