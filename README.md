@@ -118,7 +118,26 @@ The current backend includes a remote URL fetch path for loading JSON and JSONL 
 
 本地 Codex sessions 浏览器依赖 backend-assisted mode。启动本地 FastAPI 后端后，Euphony 会从 `CODEX_HOME` 读取 Codex CLI sessions；未设置 `CODEX_HOME` 时使用当前用户目录下的 `.codex`。这个 API 只适合本机使用，不应部署成远程多用户服务。
 
-PowerShell:
+PowerShell 一键启动：
+
+```powershell
+$env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1'
+```
+
+这个脚本可以从任意当前目录运行，会同时启动本地 FastAPI 后端和 Vite 前端，等待服务就绪后自动打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)。按 `Ctrl+C` 会同时停止前后端；如果终端被直接关闭，可以再次运行：
+
+```powershell
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -Stop
+```
+
+如果本机设置了 SOCKS 代理并看到 `socksio` 相关错误，可以使用：
+
+```powershell
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy
+```
+
+手动启动后端：
 
 ```powershell
 uv sync

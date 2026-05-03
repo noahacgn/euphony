@@ -46,6 +46,8 @@ Use these commands from the project root `D:\IdeaProjects\euphony`.
 pnpm install
 pnpm run dev
 pnpm run build
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1'
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -Stop
 uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
 uv run --with pytest pytest
 ```
@@ -55,8 +57,7 @@ Recommended local verification flow:
 ```powershell
 uv run --with pytest pytest
 pnpm run build
-uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
-pnpm run dev
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1'
 ```
 
 Use `VITE_EUPHONY_FRONTEND_ONLY=false pnpm run dev` if the local environment does not already run backend-assisted mode.
@@ -67,6 +68,9 @@ Use `VITE_EUPHONY_FRONTEND_ONLY=false pnpm run dev` if the local environment doe
 server/
   fastapi-main.py              Existing FastAPI app and route registration.
   codex_sessions.py            Proposed module for Codex session scanning, parsing, and API models.
+
+scripts/
+  start-local.ps1              PowerShell helper to start and stop backend and frontend together.
 
 src/
   components/app/              Existing top-level app; add local Codex browser state and loading flow here.
