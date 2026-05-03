@@ -196,6 +196,67 @@ def test_discovers_active_and_archived_rollouts_grouped_by_project(
     assert projects_by_id["unknown"].session_count == 1
 
 
+def test_projects_are_sorted_by_latest_session_activity(tmp_path: Path) -> None:
+    codex_home = tmp_path / "codex-home"
+    recent_project = tmp_path / "workspace" / "recent-project"
+    busy_old_project = tmp_path / "workspace" / "busy-old-project"
+    (recent_project / ".git").mkdir(parents=True)
+    (busy_old_project / ".git").mkdir(parents=True)
+
+    write_jsonl(
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T10-00-00-recent-session.jsonl",
+        [
+            {
+                "timestamp": "2026-05-03T10:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "recent-session", "cwd": str(recent_project)},
+            }
+        ],
+    )
+    write_jsonl(
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "01"
+        / "rollout-2026-05-01T10-00-00-old-session-a.jsonl",
+        [
+            {
+                "timestamp": "2026-05-01T10:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "old-session-a", "cwd": str(busy_old_project)},
+            }
+        ],
+    )
+    write_jsonl(
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "02"
+        / "rollout-2026-05-02T10-00-00-old-session-b.jsonl",
+        [
+            {
+                "timestamp": "2026-05-02T10:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "old-session-b", "cwd": str(busy_old_project)},
+            }
+        ],
+    )
+
+    scan = scan_codex_sessions(codex_home)
+
+    assert [project.id for project in scan.projects] == [
+        str(recent_project.resolve()),
+        str(busy_old_project.resolve()),
+    ]
+
+
 def test_reads_known_session_events_from_discovered_whitelist(tmp_path: Path) -> None:
     codex_home = tmp_path / "codex-home"
     project_root = tmp_path / "workspace" / "euphony"

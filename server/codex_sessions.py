@@ -417,6 +417,7 @@ def _build_project_summaries(
     session_counts: dict[str, int] = {}
     project_names: dict[str, str] = {}
     project_paths: dict[str, str | None] = {}
+    project_latest_updates: dict[str, str | None] = {}
 
     for session in sessions:
         session_counts[session.project_id] = session_counts.get(session.project_id, 0) + 1
@@ -424,6 +425,11 @@ def _build_project_summaries(
         project_paths[session.project_id] = (
             None if session.project_id == UNKNOWN_PROJECT_ID else session.project_id
         )
+        previous_latest = project_latest_updates.get(session.project_id)
+        if previous_latest is None or (
+            session.updated_at is not None and session.updated_at > previous_latest
+        ):
+            project_latest_updates[session.project_id] = session.updated_at
 
     projects = [
         CodexProjectSummary(
@@ -434,4 +440,13 @@ def _build_project_summaries(
         )
         for project_id, session_count in session_counts.items()
     ]
-    return sorted(projects, key=lambda project: (-project.session_count, project.name))
+    projects.sort(key=lambda project: project.name)
+    projects.sort(key=lambda project: project.session_count, reverse=True)
+    projects.sort(
+        key=lambda project: (
+            project_latest_updates[project.id] is not None,
+            project_latest_updates[project.id] or "",
+        ),
+        reverse=True,
+    )
+    return projects
