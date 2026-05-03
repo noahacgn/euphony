@@ -194,7 +194,7 @@ const parseSourceText = (sourceText: string): ParsedItem[] => {
   return allData;
 };
 
-const parseLocalData = (
+export const parseLocalData = (
   sourceText: string
 ):
   | { dataType: 'codex'; codexSessionData: unknown[] }

@@ -124,27 +124,32 @@
     - `src/components/app/local-codex-browser.ts`
     - `tests/frontend/local-codex-browser.test.mjs`
 
-- [ ] Task 7: Preserve legacy data loading flows
+- [x] Task 7: Preserve legacy data loading flows
   - Acceptance:
-    - Entering a public JSON/JSONL URL still loads data through existing `loadData`.
-    - Loading from clipboard still works.
-    - Loading local `.json` / `.jsonl` files still works.
-    - Existing manually uploaded Codex JSONL still renders as a Codex session.
-    - Returning to the app root restores local Codex browser mode.
+    - [x] Entering a public JSON/JSONL URL still loads data through existing `loadData`.
+    - [x] Loading from clipboard still works.
+    - [x] Loading local `.json` / `.jsonl` files still works.
+    - [x] Existing manually uploaded Codex JSONL still renders as a Codex session.
+    - [x] Returning to the app root restores local Codex browser mode.
   - Verify:
-    - `pnpm run build`
-    - Manual checks for URL load, local file load, clipboard load and app root
+    - [x] `node --test tests/frontend/local-data-worker.test.mjs`
+    - [x] `node --test --test-concurrency=1 tests/frontend/api-manager.codex-sessions.test.mjs tests/frontend/local-codex-browser.test.mjs tests/frontend/local-data-worker.test.mjs`
+    - [x] `uv run --with pytest python -m pytest`
+    - [x] `pnpm run build`
+    - [x] Manual browser checks for URL load, local file load, manually uploaded Codex JSONL and app root
   - Files:
     - `src/components/app/app.ts`
     - `src/components/app/app.css`
+    - `src/components/app/local-data-worker.ts`
+    - `tests/frontend/local-data-worker.test.mjs`
 
 ## Checkpoint: End-to-End MVP
 
-- [ ] `pytest` passes.
-- [ ] `pnpm run build` passes.
-- [ ] Real local `CODEX_HOME` can list projects, list sessions and render at least one session.
-- [ ] Legacy loading flows still work.
-- [ ] No write operations against Codex files exist.
+- [x] `pytest` passes.
+- [x] `pnpm run build` passes.
+- [x] Real local `CODEX_HOME` can list projects, list sessions and render at least one session.
+- [x] Legacy loading flows still work.
+- [x] No write operations against Codex files exist.
 
 ## Phase 5: Final Verification and Documentation
 
