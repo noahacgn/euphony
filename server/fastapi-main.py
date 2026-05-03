@@ -11,7 +11,7 @@ from typing import Any
 
 import jmespath
 from async_lru import alru_cache
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
@@ -48,6 +48,13 @@ HARMONY_RENDER_CONFIG = RenderConversationConfig(auto_drop_analysis=False)
 MAX_PUBLIC_JSON_BYTES = 25 * 1024 * 1024
 TRANSLATION_MAX_CONCURRENCY = 1024
 TRANSLATION_SEMAPHORE_ACQUIRE_TIMEOUT_S = 60
+LOCAL_CODEX_ALLOWED_ORIGINS = {
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8020",
+    "http://127.0.0.1:8020",
+}
+LOCAL_ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 client = AsyncOpenAI(api_key=os.environ.get("OPEN_AI_API_KEY"))
 _translation_semaphore = asyncio.Semaphore(TRANSLATION_MAX_CONCURRENCY)
@@ -156,6 +163,36 @@ def _to_codex_session_api_response(
         updatedAt=session.updated_at,
         archived=session.archived,
     )
+
+
+def _extract_hostname(raw_host: str) -> str:
+    if raw_host.startswith("["):
+        host_end = raw_host.find("]")
+        if host_end != -1:
+            return raw_host[1:host_end].lower()
+    return raw_host.rsplit(":", maxsplit=1)[0].lower()
+
+
+def _assert_local_codex_request(request: Request) -> None:
+    host = _extract_hostname(request.headers.get("host", ""))
+    if host not in LOCAL_ALLOWED_HOSTS:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Failed to access local Codex sessions: request must target a "
+                "local host."
+            ),
+        )
+
+    origin = request.headers.get("origin")
+    if origin is not None and origin not in LOCAL_CODEX_ALLOWED_ORIGINS:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Failed to access local Codex sessions: request must come from "
+                "a local origin."
+            ),
+        )
 
 
 def normalize_harmony_content(raw_content: Any, role: HarmonyRole) -> list[Any]:
@@ -373,7 +410,8 @@ async def ping() -> dict[str, str]:
     "/codex-sessions/projects/",
     response_model=CodexProjectsAPIResponse,
 )
-async def get_codex_session_projects() -> CodexProjectsAPIResponse:
+async def get_codex_session_projects(request: Request) -> CodexProjectsAPIResponse:
+    _assert_local_codex_request(request)
     scan = await asyncio.to_thread(scan_codex_sessions)
     return CodexProjectsAPIResponse(
         projects=[
@@ -388,8 +426,10 @@ async def get_codex_session_projects() -> CodexProjectsAPIResponse:
     response_model=CodexSessionsAPIResponse,
 )
 async def get_codex_project_sessions(
+    request: Request,
     projectId: str = Query(...),
 ) -> CodexSessionsAPIResponse:
+    _assert_local_codex_request(request)
     requested_project_id = projectId.strip()
     if requested_project_id == "":
         raise HTTPException(
@@ -421,7 +461,11 @@ async def get_codex_project_sessions(
 
 
 @fastapi_app.get("/codex-sessions/sessions/{session_id}/")
-async def get_codex_session_detail(session_id: str) -> list[dict[str, Any]]:
+async def get_codex_session_detail(
+    request: Request,
+    session_id: str,
+) -> list[dict[str, Any]]:
+    _assert_local_codex_request(request)
     try:
         return await asyncio.to_thread(read_codex_session_events, session_id)
     except CodexSessionNotFoundError as exc:
@@ -606,7 +650,7 @@ async def serve_frontend(full_path: str) -> Response:
 
 app = CORSMiddleware(
     app=fastapi_app,
-    allow_origins=["*"],
+    allow_origins=sorted(LOCAL_CODEX_ALLOWED_ORIGINS),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

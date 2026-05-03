@@ -334,6 +334,56 @@ def test_scan_excludes_malformed_rollouts_and_keeps_valid_sessions(
     assert "line 1" in scan.warnings[0]
 
 
+def test_scan_summarizes_valid_prefix_when_later_detail_lines_are_malformed(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T14-20-00-prefix-session.jsonl"
+    )
+    rollout.parent.mkdir(parents=True, exist_ok=True)
+    rollout.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-05-03T14:20:00Z",
+                "type": "session_meta",
+                "payload": {"id": "prefix-session"},
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "timestamp": "2026-05-03T14:21:00Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "user_message",
+                    "message": "Use this prefix for the list view",
+                },
+            }
+        )
+        + "\n"
+        + "{bad json}\n",
+        encoding="utf-8",
+    )
+
+    scan = scan_codex_sessions(codex_home)
+
+    assert [session.id for session in scan.sessions] == ["prefix-session"]
+    assert scan.sessions[0].preview == "Use this prefix for the list view"
+    assert len(scan.warnings) == 1
+    assert str(rollout.resolve()) in scan.warnings[0]
+    assert "line 3" in scan.warnings[0]
+
+    with pytest.raises(RolloutParseError) as exc_info:
+        read_codex_session_events("prefix-session", codex_home)
+    assert "line 3" in str(exc_info.value)
+
+
 def test_codex_session_api_lists_projects_sessions_and_detail(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -406,7 +456,7 @@ def test_codex_session_api_lists_projects_sessions_and_detail(
 
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     app_module = load_fastapi_main(monkeypatch)
-    client = TestClient(app_module.fastapi_app)
+    client = TestClient(app_module.fastapi_app, base_url="http://127.0.0.1:8020")
 
     projects_response = client.get("/codex-sessions/projects/")
     assert projects_response.status_code == 200
@@ -471,12 +521,19 @@ def test_codex_session_api_errors_are_actionable(
 
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     app_module = load_fastapi_main(monkeypatch)
-    client = TestClient(app_module.fastapi_app)
+    client = TestClient(app_module.fastapi_app, base_url="http://127.0.0.1:8020")
 
     projects_response = client.get("/codex-sessions/projects/")
     assert projects_response.status_code == 200
     projects_body = projects_response.json()
-    assert projects_body["projects"] == []
+    assert projects_body["projects"] == [
+        {
+            "id": "unknown",
+            "name": "Unknown project",
+            "path": None,
+            "sessionCount": 1,
+        }
+    ]
     assert len(projects_body["warnings"]) == 1
     assert str(broken_rollout.resolve()) in projects_body["warnings"][0]
 
@@ -497,6 +554,49 @@ def test_codex_session_api_errors_are_actionable(
     assert "api-broken" in broken_detail
     assert str(broken_rollout.resolve()) in broken_detail
     assert "line 2" in broken_detail
+
+
+def test_codex_session_api_rejects_cross_site_origins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    app_module = load_fastapi_main(monkeypatch)
+    client = TestClient(app_module.app)
+
+    blocked_origin_response = client.get(
+        "/codex-sessions/projects/",
+        headers={
+            "Origin": "https://example.com",
+            "Host": "127.0.0.1:8020",
+        },
+    )
+    assert blocked_origin_response.status_code == 403
+    assert "local origin" in blocked_origin_response.json()["detail"]
+    assert "access-control-allow-origin" not in blocked_origin_response.headers
+
+    blocked_host_response = client.get(
+        "/codex-sessions/projects/",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Host": "example.com",
+        },
+    )
+    assert blocked_host_response.status_code == 403
+    assert "local host" in blocked_host_response.json()["detail"]
+
+    local_origin_response = client.get(
+        "/codex-sessions/projects/",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Host": "127.0.0.1:8020",
+        },
+    )
+    assert local_origin_response.status_code == 200
+    assert (
+        local_origin_response.headers["access-control-allow-origin"]
+        == "http://localhost:3000"
+    )
 
 
 def test_codex_session_api_does_not_regress_existing_routes(

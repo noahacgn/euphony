@@ -41,6 +41,15 @@ class CodexSessionScanResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class _RolloutSummaryFields:
+    session_meta: dict[str, Any]
+    preview: str
+    first_timestamp: str | None
+    last_timestamp: str | None
+    warning: str | None = None
+
+
 class RolloutParseError(ValueError):
     pass
 
@@ -65,13 +74,14 @@ def scan_codex_sessions(codex_home: Path | str | None = None) -> CodexSessionSca
     warnings: list[str] = []
     for rollout_path, archived in _discover_rollout_paths(resolved_codex_home):
         try:
-            sessions.append(
-                _build_session_summary(
-                    rollout_path=rollout_path,
-                    archived=archived,
-                    session_index_titles=session_index_titles,
-                )
+            session_summary, warning = _build_session_summary(
+                rollout_path=rollout_path,
+                archived=archived,
+                session_index_titles=session_index_titles,
             )
+            sessions.append(session_summary)
+            if warning is not None:
+                warnings.append(warning)
         except RolloutParseError as exc:
             warnings.append(str(exc))
 
@@ -205,11 +215,11 @@ def _build_session_summary(
     rollout_path: Path,
     archived: bool,
     session_index_titles: dict[str, str],
-) -> CodexSessionSummary:
-    events = _read_jsonl_objects(rollout_path)
+) -> tuple[CodexSessionSummary, str | None]:
+    summary_fields = _scan_rollout_summary(rollout_path)
     filename_id = _session_id_from_filename(rollout_path)
     filename_timestamp = _timestamp_from_filename(rollout_path)
-    session_meta = _find_session_meta_payload(events)
+    session_meta = summary_fields.session_meta
     session_id = _get_first_text(session_meta, ["id"]) or filename_id
     if session_id is None:
         raise RolloutParseError(
@@ -218,22 +228,84 @@ def _build_session_summary(
 
     cwd = _resolve_cwd(_get_first_text(session_meta, ["cwd"]))
     project_id, project_name = _project_from_cwd(cwd)
-    preview = _extract_preview(events)
-    created_at = _first_event_timestamp(events) or filename_timestamp
-    updated_at = _last_event_timestamp(events) or created_at
+    preview = summary_fields.preview
+    created_at = summary_fields.first_timestamp or filename_timestamp
+    updated_at = summary_fields.last_timestamp or created_at
     title = session_index_titles.get(session_id) or preview or rollout_path.stem
 
-    return CodexSessionSummary(
-        id=session_id,
-        title=title,
+    return (
+        CodexSessionSummary(
+            id=session_id,
+            title=title,
+            preview=preview,
+            cwd=cwd,
+            project_id=project_id,
+            project_name=project_name,
+            rollout_path=str(rollout_path.resolve()),
+            created_at=created_at,
+            updated_at=updated_at,
+            archived=archived,
+        ),
+        summary_fields.warning,
+    )
+
+
+def _scan_rollout_summary(path: Path) -> _RolloutSummaryFields:
+    session_meta: dict[str, Any] = {}
+    preview = ""
+    first_timestamp: str | None = None
+    last_timestamp: str | None = None
+
+    try:
+        with path.open(encoding="utf-8") as file:
+            for line_number, line in enumerate(file, start=1):
+                stripped_line = line.strip()
+                if stripped_line == "":
+                    continue
+                try:
+                    parsed = json.loads(stripped_line)
+                except json.JSONDecodeError as exc:
+                    warning = (
+                        f"Failed to parse JSONL in {path} at line "
+                        f"{line_number}: {exc.msg}."
+                    )
+                    if (
+                        first_timestamp is None
+                        and session_meta == {}
+                        and preview == ""
+                    ):
+                        raise RolloutParseError(warning) from exc
+                    return _RolloutSummaryFields(
+                        session_meta=session_meta,
+                        preview=preview,
+                        first_timestamp=first_timestamp,
+                        last_timestamp=last_timestamp,
+                        warning=warning,
+                    )
+                if not isinstance(parsed, dict):
+                    continue
+
+                timestamp = parsed.get("timestamp")
+                if isinstance(timestamp, str) and timestamp != "":
+                    if first_timestamp is None:
+                        first_timestamp = timestamp
+                    last_timestamp = timestamp
+
+                if parsed.get("type") == "session_meta":
+                    payload = parsed.get("payload")
+                    if session_meta == {} and isinstance(payload, dict):
+                        session_meta = payload
+
+                if preview == "":
+                    preview = _extract_preview_from_event(parsed)
+    except OSError as exc:
+        raise RolloutParseError(f"Failed to read Codex rollout {path}: {exc}.") from exc
+
+    return _RolloutSummaryFields(
+        session_meta=session_meta,
         preview=preview,
-        cwd=cwd,
-        project_id=project_id,
-        project_name=project_name,
-        rollout_path=str(rollout_path.resolve()),
-        created_at=created_at,
-        updated_at=updated_at,
-        archived=archived,
+        first_timestamp=first_timestamp,
+        last_timestamp=last_timestamp,
     )
 
 
@@ -307,44 +379,23 @@ def _find_git_root(cwd: Path) -> Path | None:
     return None
 
 
-def _extract_preview(events: list[dict[str, Any]]) -> str:
-    for event in events:
-        event_type = event.get("type")
-        payload = event.get("payload")
-        if not isinstance(payload, dict):
-            continue
+def _extract_preview_from_event(event: dict[str, Any]) -> str:
+    event_type = event.get("type")
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return ""
 
-        if event_type == "event_msg" and payload.get("type") == "user_message":
-            preview = _text_from_value(payload.get("message"))
-            if preview != "":
-                return preview
+    if event_type == "event_msg" and payload.get("type") == "user_message":
+        return _text_from_value(payload.get("message"))
 
-        if (
-            event_type == "response_item"
-            and payload.get("type") == "message"
-            and payload.get("role") == "user"
-        ):
-            preview = _text_from_value(payload.get("content"))
-            if preview != "":
-                return preview
+    if (
+        event_type == "response_item"
+        and payload.get("type") == "message"
+        and payload.get("role") == "user"
+    ):
+        return _text_from_value(payload.get("content"))
 
     return ""
-
-
-def _first_event_timestamp(events: list[dict[str, Any]]) -> str | None:
-    for event in events:
-        timestamp = event.get("timestamp")
-        if isinstance(timestamp, str) and timestamp != "":
-            return timestamp
-    return None
-
-
-def _last_event_timestamp(events: list[dict[str, Any]]) -> str | None:
-    for event in reversed(events):
-        timestamp = event.get("timestamp")
-        if isinstance(timestamp, str) and timestamp != "":
-            return timestamp
-    return None
 
 
 def _text_from_value(value: Any) -> str:
