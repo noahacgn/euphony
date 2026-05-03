@@ -46,16 +46,16 @@ Use these commands from the project root `D:\IdeaProjects\euphony`.
 pnpm install
 pnpm run dev
 pnpm run build
-uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
-pytest
+uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+uv run --with pytest pytest
 ```
 
 Recommended local verification flow:
 
 ```powershell
-pytest
+uv run --with pytest pytest
 pnpm run build
-uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
 pnpm run dev
 ```
 
@@ -187,7 +187,7 @@ Manual browser verification is required for this feature because it changes the 
 - Use manual refresh for MVP; avoid polling or file watching.
 - Keep all APIs read-only.
 - Preserve existing URL, clipboard and local file loading workflows.
-- Run `pytest` and `pnpm run build` before committing implementation changes.
+- Run `uv run --with pytest pytest` and `pnpm run build` before committing implementation changes.
 - Keep generated `lib/` untouched.
 
 ### Ask First

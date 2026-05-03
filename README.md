@@ -123,7 +123,7 @@ PowerShell:
 ```powershell
 uv sync
 $env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
-uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
 ```
 
 另开一个终端启动前端：
@@ -147,14 +147,14 @@ Start the backend server:
 ```bash
 pnpm install
 uv sync
-OPEN_AI_API_KEY=your-local-openai-api-key uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+OPEN_AI_API_KEY=your-local-openai-api-key uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
 ```
 
 In PowerShell, set the backend API key before starting the server:
 
 ```powershell
 $env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
-uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
 ```
 
 Start the frontend development server:
