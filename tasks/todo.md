@@ -39,16 +39,16 @@
 
 ## Phase 2: Backend API Contract
 
-- [ ] Task 3: Expose local Codex session APIs
+- [x] Task 3: Expose local Codex session APIs
   - Acceptance:
-    - `GET /codex-sessions/projects/` returns projects with counts and warnings.
-    - `GET /codex-sessions/sessions/?projectId=...` returns only sessions for the requested project.
-    - `GET /codex-sessions/sessions/{sessionId}/` returns full event array for a known session.
-    - API errors include actionable messages and appropriate HTTP status codes.
-    - Existing `/blob-jsonl/`, `/translate/`, `/harmony-render/` routes still behave as before.
+    - [x] `GET /codex-sessions/projects/` returns projects with counts and warnings.
+    - [x] `GET /codex-sessions/sessions/?projectId=...` returns only sessions for the requested project.
+    - [x] `GET /codex-sessions/sessions/{sessionId}/` returns full event array for a known session.
+    - [x] API errors include actionable messages and appropriate HTTP status codes.
+    - [x] Existing `/blob-jsonl/`, `/translate/`, `/harmony-render/` routes still behave as before.
   - Verify:
-    - `pytest tests/test_codex_sessions.py`
-    - Manual API check with fixture or temporary `CODEX_HOME`
+    - [x] `uv run --with pytest python -m pytest tests/test_codex_sessions.py`
+    - [x] API checked through FastAPI `TestClient` with temporary `CODEX_HOME`
   - Files:
     - `server/codex_sessions.py`
     - `server/fastapi-main.py`
@@ -56,9 +56,9 @@
 
 ## Checkpoint: Backend API
 
-- [ ] `pytest` passes.
-- [ ] API can be exercised against fixture `CODEX_HOME`.
-- [ ] Route contracts are stable enough for frontend client work.
+- [x] `uv run --with pytest python -m pytest` passes.
+- [x] API can be exercised against fixture `CODEX_HOME`.
+- [x] Route contracts are stable enough for frontend client work.
 
 ## Phase 3: Frontend Client and Local Browser Skeleton
 

@@ -29,6 +29,15 @@ from openai_harmony import (
 )
 from pydantic import BaseModel
 
+from codex_sessions import (
+    CodexProjectSummary,
+    CodexSessionNotFoundError,
+    CodexSessionSummary,
+    RolloutParseError,
+    read_codex_session_events,
+    scan_codex_sessions,
+)
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -66,6 +75,36 @@ class BlobJSONLResponse(BaseModel):
     resolvedURL: str
 
 
+class CodexProjectAPIResponse(BaseModel):
+    id: str
+    name: str
+    path: str | None
+    sessionCount: int
+
+
+class CodexProjectsAPIResponse(BaseModel):
+    projects: list[CodexProjectAPIResponse]
+    warnings: list[str]
+
+
+class CodexSessionAPIResponse(BaseModel):
+    id: str
+    title: str
+    preview: str
+    cwd: str | None
+    projectId: str
+    projectName: str
+    rolloutPath: str
+    createdAt: str | None
+    updatedAt: str | None
+    archived: bool
+
+
+class CodexSessionsAPIResponse(BaseModel):
+    sessions: list[CodexSessionAPIResponse]
+    warnings: list[str]
+
+
 class HarmonyRendererListResult(BaseModel):
     renderers: list[str]
 
@@ -89,6 +128,34 @@ def _resolve_frontend_path(path_fragment: str) -> Path:
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Not found") from exc
     return candidate
+
+
+def _to_codex_project_api_response(
+    project: CodexProjectSummary,
+) -> CodexProjectAPIResponse:
+    return CodexProjectAPIResponse(
+        id=project.id,
+        name=project.name,
+        path=project.path,
+        sessionCount=project.session_count,
+    )
+
+
+def _to_codex_session_api_response(
+    session: CodexSessionSummary,
+) -> CodexSessionAPIResponse:
+    return CodexSessionAPIResponse(
+        id=session.id,
+        title=session.title,
+        preview=session.preview,
+        cwd=session.cwd,
+        projectId=session.project_id,
+        projectName=session.project_name,
+        rolloutPath=session.rollout_path,
+        createdAt=session.created_at,
+        updatedAt=session.updated_at,
+        archived=session.archived,
+    )
 
 
 def normalize_harmony_content(raw_content: Any, role: HarmonyRole) -> list[Any]:
@@ -300,6 +367,67 @@ fastapi_app = FastAPI(title="Euphony")
 @fastapi_app.get("/ping/")
 async def ping() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@fastapi_app.get(
+    "/codex-sessions/projects/",
+    response_model=CodexProjectsAPIResponse,
+)
+async def get_codex_session_projects() -> CodexProjectsAPIResponse:
+    scan = await asyncio.to_thread(scan_codex_sessions)
+    return CodexProjectsAPIResponse(
+        projects=[
+            _to_codex_project_api_response(project) for project in scan.projects
+        ],
+        warnings=scan.warnings,
+    )
+
+
+@fastapi_app.get(
+    "/codex-sessions/sessions/",
+    response_model=CodexSessionsAPIResponse,
+)
+async def get_codex_project_sessions(
+    projectId: str = Query(...),
+) -> CodexSessionsAPIResponse:
+    requested_project_id = projectId.strip()
+    if requested_project_id == "":
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to list Codex sessions: projectId must not be empty.",
+        )
+
+    scan = await asyncio.to_thread(scan_codex_sessions)
+    known_project_ids = {project.id for project in scan.projects}
+    if requested_project_id not in known_project_ids:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Failed to list Codex sessions: projectId "
+                f"{requested_project_id!r} was not found in CODEX_HOME. "
+                "Refresh the Codex project list and select a project returned by "
+                "the local backend."
+            ),
+        )
+
+    return CodexSessionsAPIResponse(
+        sessions=[
+            _to_codex_session_api_response(session)
+            for session in scan.sessions
+            if session.project_id == requested_project_id
+        ],
+        warnings=scan.warnings,
+    )
+
+
+@fastapi_app.get("/codex-sessions/sessions/{session_id}/")
+async def get_codex_session_detail(session_id: str) -> list[dict[str, Any]]:
+    try:
+        return await asyncio.to_thread(read_codex_session_events, session_id)
+    except CodexSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RolloutParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @fastapi_app.get("/blob-jsonl/", response_model=BlobJSONLResponse)

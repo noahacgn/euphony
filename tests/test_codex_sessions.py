@@ -1,9 +1,11 @@
 import json
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
 SERVER_DIR = Path(__file__).resolve().parents[1] / "server"
 sys.path.insert(0, str(SERVER_DIR))
@@ -14,6 +16,33 @@ from codex_sessions import (
     read_codex_session_events,
     scan_codex_sessions,
 )
+
+
+def load_fastapi_main(monkeypatch: pytest.MonkeyPatch) -> Any:
+    monkeypatch.setenv("OPEN_AI_API_KEY", "test-api-key")
+    for proxy_var in [
+        "ALL_PROXY",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY",
+        "all_proxy",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
+    ]:
+        monkeypatch.delenv(proxy_var, raising=False)
+    module_name = "fastapi_main_under_test"
+    sys.modules.pop(module_name, None)
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        SERVER_DIR / "fastapi-main.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -303,3 +332,209 @@ def test_scan_excludes_malformed_rollouts_and_keeps_valid_sessions(
     assert len(scan.warnings) == 1
     assert str(broken_rollout.resolve()) in scan.warnings[0]
     assert "line 1" in scan.warnings[0]
+
+
+def test_codex_session_api_lists_projects_sessions_and_detail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    nested_cwd = project_root / "packages" / "viewer"
+    other_project = tmp_path / "workspace" / "other-project"
+    (project_root / ".git").mkdir(parents=True)
+    nested_cwd.mkdir(parents=True)
+    other_project.mkdir(parents=True)
+
+    active_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T15-00-00-api-active.jsonl"
+    )
+    archived_rollout = (
+        codex_home
+        / "archived_sessions"
+        / "2026"
+        / "05"
+        / "02"
+        / "rollout-2026-05-02T15-00-00-api-archived.jsonl"
+    )
+    other_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "01"
+        / "rollout-2026-05-01T15-00-00-api-other.jsonl"
+    )
+    active_events = [
+        {
+            "timestamp": "2026-05-03T15:00:00Z",
+            "type": "session_meta",
+            "payload": {"id": "api-active", "cwd": str(nested_cwd)},
+        },
+        {
+            "timestamp": "2026-05-03T15:01:00Z",
+            "type": "event_msg",
+            "payload": {"type": "user_message", "message": "API active preview"},
+        },
+    ]
+    write_jsonl(active_rollout, active_events)
+    write_jsonl(
+        archived_rollout,
+        [
+            {
+                "timestamp": "2026-05-02T15:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "api-archived", "cwd": str(nested_cwd)},
+            }
+        ],
+    )
+    write_jsonl(
+        other_rollout,
+        [
+            {
+                "timestamp": "2026-05-01T15:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "api-other", "cwd": str(other_project)},
+            }
+        ],
+    )
+
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    app_module = load_fastapi_main(monkeypatch)
+    client = TestClient(app_module.fastapi_app)
+
+    projects_response = client.get("/codex-sessions/projects/")
+    assert projects_response.status_code == 200
+    projects_body = projects_response.json()
+    assert projects_body["warnings"] == []
+    projects_by_id = {
+        project["id"]: project for project in projects_body["projects"]
+    }
+    assert projects_by_id[str(project_root.resolve())]["sessionCount"] == 2
+    assert projects_by_id[str(project_root.resolve())]["name"] == "euphony"
+
+    sessions_response = client.get(
+        "/codex-sessions/sessions/",
+        params={"projectId": str(project_root.resolve())},
+    )
+    assert sessions_response.status_code == 200
+    sessions_body = sessions_response.json()
+    assert sessions_body["warnings"] == []
+    sessions_by_id = {
+        session["id"]: session for session in sessions_body["sessions"]
+    }
+    assert set(sessions_by_id) == {"api-active", "api-archived"}
+    assert sessions_by_id["api-active"]["projectId"] == str(project_root.resolve())
+    assert sessions_by_id["api-active"]["projectName"] == "euphony"
+    assert sessions_by_id["api-active"]["rolloutPath"] == str(active_rollout.resolve())
+    assert sessions_by_id["api-active"]["createdAt"] == "2026-05-03T15:00:00Z"
+    assert sessions_by_id["api-active"]["updatedAt"] == "2026-05-03T15:01:00Z"
+    assert sessions_by_id["api-active"]["archived"] is False
+    assert sessions_by_id["api-archived"]["archived"] is True
+
+    detail_response = client.get("/codex-sessions/sessions/api-active/")
+    assert detail_response.status_code == 200
+    assert detail_response.json() == active_events
+
+
+def test_codex_session_api_errors_are_actionable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    broken_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T16-00-00-api-broken.jsonl"
+    )
+    broken_rollout.parent.mkdir(parents=True, exist_ok=True)
+    broken_rollout.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-05-03T16:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "api-broken"},
+            }
+        )
+        + "\n"
+        + "{bad json}\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    app_module = load_fastapi_main(monkeypatch)
+    client = TestClient(app_module.fastapi_app)
+
+    projects_response = client.get("/codex-sessions/projects/")
+    assert projects_response.status_code == 200
+    projects_body = projects_response.json()
+    assert projects_body["projects"] == []
+    assert len(projects_body["warnings"]) == 1
+    assert str(broken_rollout.resolve()) in projects_body["warnings"][0]
+
+    unknown_project_response = client.get(
+        "/codex-sessions/sessions/",
+        params={"projectId": "missing-project"},
+    )
+    assert unknown_project_response.status_code == 404
+    assert "projectId" in unknown_project_response.json()["detail"]
+
+    unknown_session_response = client.get("/codex-sessions/sessions/missing-session/")
+    assert unknown_session_response.status_code == 404
+    assert "Refresh the Codex session list" in unknown_session_response.json()["detail"]
+
+    broken_session_response = client.get("/codex-sessions/sessions/api-broken/")
+    assert broken_session_response.status_code == 400
+    broken_detail = broken_session_response.json()["detail"]
+    assert "api-broken" in broken_detail
+    assert str(broken_rollout.resolve()) in broken_detail
+    assert "line 2" in broken_detail
+
+
+def test_codex_session_api_does_not_regress_existing_routes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    app_module = load_fastapi_main(monkeypatch)
+
+    async def fake_translate_singleflight(source_text: str) -> Any:
+        return app_module.TranslationResult(
+            language="English",
+            is_translated=False,
+            translation="",
+            has_command=False,
+        )
+
+    monkeypatch.setattr(
+        app_module,
+        "_translate_singleflight",
+        fake_translate_singleflight,
+    )
+    client = TestClient(app_module.fastapi_app)
+
+    blob_response = client.get(
+        "/blob-jsonl/",
+        params={"blobURL": "file:///tmp/session.jsonl"},
+    )
+    assert blob_response.status_code == 400
+    assert "Only public http(s) URLs are supported" in blob_response.json()["detail"]
+
+    translate_response = client.post("/translate/", json={"source": "hello"})
+    assert translate_response.status_code == 200
+    assert translate_response.json()["is_translated"] is False
+
+    harmony_response = client.post(
+        "/harmony-render/",
+        json={"conversation": "{}", "renderer_name": "unsupported"},
+    )
+    assert harmony_response.status_code == 400
+    assert "Unsupported renderer" in harmony_response.json()["detail"]
