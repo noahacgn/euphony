@@ -184,6 +184,19 @@ export class APIManager {
     this.apiBaseURL = apiBaseURL;
   }
 
+  private async getLocalCodexJSON<T>(path: string): Promise<T> {
+    const response = await fetch(`${this.apiBaseURL}${path}`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return (await response.json()) as T;
+  }
+
   getJSONL = async ({
     blobURL,
     offset,
@@ -306,16 +319,9 @@ export class APIManager {
   };
 
   listCodexProjects = async (): Promise<CodexProjectsResponse> => {
-    const response = await fetch(`${this.apiBaseURL}codex-sessions/projects/`, {
-      method: 'GET',
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return (await response.json()) as CodexProjectsResponse;
+    return this.getLocalCodexJSON<CodexProjectsResponse>(
+      'codex-sessions/projects/'
+    );
   };
 
   listCodexProjectSessions = async (
@@ -324,37 +330,17 @@ export class APIManager {
     const queryPath = new URLSearchParams();
     queryPath.set('projectId', projectId);
 
-    const response = await fetch(
-      `${this.apiBaseURL}codex-sessions/sessions/?${queryPath.toString()}`,
-      {
-        method: 'GET',
-        credentials: 'include'
-      }
+    return this.getLocalCodexJSON<CodexSessionsResponse>(
+      `codex-sessions/sessions/?${queryPath.toString()}`
     );
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return (await response.json()) as CodexSessionsResponse;
   };
 
   readCodexSession = async (
     sessionId: string
   ): Promise<CodexSessionEvent[]> => {
-    const response = await fetch(
-      `${this.apiBaseURL}codex-sessions/sessions/${encodeURIComponent(sessionId)}/`,
-      {
-        method: 'GET',
-        credentials: 'include'
-      }
+    return this.getLocalCodexJSON<CodexSessionEvent[]>(
+      `codex-sessions/sessions/${encodeURIComponent(sessionId)}/`
     );
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return (await response.json()) as CodexSessionEvent[];
   };
 }
 
