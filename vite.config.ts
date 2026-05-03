@@ -48,6 +48,38 @@ async function getLibraryEntryPoints() {
   return files.filter(file => !file.includes('app'));
 }
 
+// gpt-tokenizer 内置 o200k_harmony 词表，精确渲染 token 时需要约 2MB 的懒加载 chunk。
+// 阈值只抬到略高于该已知异步资源，避免默认页面主包警告被掩盖。
+const APP_CHUNK_SIZE_WARNING_LIMIT_KB = 2200;
+
+function appManualChunks(id: string) {
+  if (!id.includes('node_modules')) {
+    return;
+  }
+
+  if (id.includes('gpt-tokenizer')) {
+    return 'vendor-gpt-tokenizer';
+  }
+
+  if (id.includes('@shoelace-style')) {
+    return 'vendor-shoelace';
+  }
+
+  if (id.includes('prismjs')) {
+    return 'vendor-prism';
+  }
+
+  if (id.includes('marked') || id.includes('dompurify')) {
+    return 'vendor-markdown';
+  }
+
+  if (id.includes('lit')) {
+    return 'vendor-lit';
+  }
+
+  return 'vendor';
+}
+
 export default defineConfig(async ({ command, mode }) => {
   if (command === 'serve') {
     // Development
@@ -68,9 +100,13 @@ export default defineConfig(async ({ command, mode }) => {
         return {
           build: {
             outDir: 'dist',
+            chunkSizeWarningLimit: APP_CHUNK_SIZE_WARNING_LIMIT_KB,
             rollupOptions: {
               input: {
                 main: resolve(__dirname, 'index.html')
+              },
+              output: {
+                manualChunks: appManualChunks
               }
             }
           }
@@ -83,9 +119,13 @@ export default defineConfig(async ({ command, mode }) => {
           base: '/euphony/',
           build: {
             outDir: 'dist',
+            chunkSizeWarningLimit: APP_CHUNK_SIZE_WARNING_LIMIT_KB,
             rollupOptions: {
               input: {
                 main: resolve(__dirname, 'index.html')
+              },
+              output: {
+                manualChunks: appManualChunks
               }
             }
           },

@@ -446,10 +446,12 @@ export class EuphonyApp extends LitElement {
    * This method is called when the DOM is added for the first time
    */
   firstUpdated() {
-    this.initData().then(
-      () => {},
-      () => {}
-    );
+    window.setTimeout(() => {
+      this.initData().then(
+        () => {},
+        () => {}
+      );
+    });
 
     // Show the scroll top button when the user scrolls down
     const appElement = this.shadowRoot?.querySelector('.app');

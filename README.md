@@ -114,6 +114,29 @@ The backend server is optional. It should only be used locally. Frontend-only mo
 
 The current backend includes a remote URL fetch path for loading JSON and JSONL data. If you host that backend on an external server, it can introduce SSRF risk because the server may be tricked into fetching attacker-controlled URLs. Therefore, only use the backend-assisted mode for local development.
 
+### 本地 Codex sessions 浏览器
+
+本地 Codex sessions 浏览器依赖 backend-assisted mode。启动本地 FastAPI 后端后，Euphony 会从 `CODEX_HOME` 读取 Codex CLI sessions；未设置 `CODEX_HOME` 时使用当前用户目录下的 `.codex`。这个 API 只适合本机使用，不应部署成远程多用户服务。
+
+PowerShell:
+
+```powershell
+uv sync
+$env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
+uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+```
+
+另开一个终端启动前端：
+
+```powershell
+$env:VITE_EUPHONY_FRONTEND_ONLY = 'false'
+pnpm run dev
+```
+
+后端导入时会初始化 OpenAI 客户端，因此即使只浏览本地 Codex sessions，也需要设置 `OPEN_AI_API_KEY`。如果本机设置了 SOCKS 代理并看到 `socksio` 相关错误，请在启动后端的终端里临时清理 `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` 等代理环境变量，或安装支持 SOCKS 的 `httpx` 运行环境。
+
+访问 [http://localhost:3000/](http://localhost:3000/) 后，应用默认显示本地 Codex sessions 浏览器。URL、剪贴板和本地 `.json` / `.jsonl` 文件加载入口仍然保留。
+
 ## Development
 
 To develop Euphony locally, install Node.js and a package manager such as
@@ -123,6 +146,14 @@ Start the backend server:
 
 ```bash
 pnpm install
+uv sync
+OPEN_AI_API_KEY=your-local-openai-api-key uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+```
+
+In PowerShell, set the backend API key before starting the server:
+
+```powershell
+$env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
 uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
 ```
 

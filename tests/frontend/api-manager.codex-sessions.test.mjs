@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import { createServer } from 'vite';
 
@@ -139,4 +141,14 @@ test('BrowserAPIManager does not expose local Codex session APIs', async () => {
   assert.equal(manager.listCodexProjects, undefined);
   assert.equal(manager.listCodexProjectSessions, undefined);
   assert.equal(manager.readCodexSession, undefined);
+});
+
+test('BrowserAPIManager loads the Harmony tokenizer only when rendering is requested', async () => {
+  const apiManagerSource = await readFile(
+    join(process.cwd(), 'src/utils/api-manager.ts'),
+    'utf-8'
+  );
+
+  assert.doesNotMatch(apiManagerSource, /from '\.\/harmony-render'/);
+  assert.match(apiManagerSource, /import\(\s*'\.\/harmony-render'\s*\)/);
 });

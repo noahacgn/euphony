@@ -153,17 +153,18 @@
 
 ## Phase 5: Final Verification and Documentation
 
-- [ ] Task 8: Run final verification and update docs where needed
+- [x] Task 8: Run final verification and update docs where needed
   - Acceptance:
-    - `pytest` passes.
-    - `pnpm run build` passes.
-    - Manual backend-assisted local run succeeds against real `CODEX_HOME`.
-    - README or project docs mention local backend requirement if the user-facing startup flow changed.
-    - `SPEC.md`, `tasks/plan.md`, and `tasks/todo.md` remain accurate or are updated before final commit.
+    - [x] `pytest` passes.
+    - [x] `pnpm run build` passes.
+    - [x] Manual backend-assisted local run succeeds against real `CODEX_HOME`.
+    - [x] README documents the local backend, `CODEX_HOME`, and `OPEN_AI_API_KEY` requirements.
+    - [x] `SPEC.md`, `tasks/plan.md`, and `tasks/todo.md` remain accurate; no spec or plan behavior changes were needed.
   - Verify:
-    - `pytest`
-    - `pnpm run build`
-    - Manual browser check at `http://localhost:3000/`
+    - [x] `uv run --with pytest python -m pytest`
+    - [x] `node --test --test-concurrency=1 tests/frontend/api-manager.codex-sessions.test.mjs tests/frontend/local-codex-browser.test.mjs tests/frontend/local-data-worker.test.mjs`
+    - [x] `pnpm run build`
+    - [x] Manual browser check at `http://localhost:3000/`
   - Files:
     - `README.md` if run instructions need updating
     - `SPEC.md` if scope decisions changed
@@ -172,8 +173,8 @@
 
 ## Checkpoint: Complete
 
-- [ ] All success criteria in `SPEC.md` are met.
-- [ ] All tasks in this file are complete.
-- [ ] No warnings remain from tests/build.
-- [ ] Git diff contains no changes under `lib/`.
-- [ ] Ready for human review.
+- [x] All success criteria in `SPEC.md` are met.
+- [x] All tasks in this file are complete.
+- [x] No warnings remain from tests/build.
+- [x] Git diff contains no changes under `lib/`.
+- [x] Ready for human review.
