@@ -5,7 +5,13 @@ import { createServer } from 'vite';
 async function loadAPIManagerModule() {
   const server = await createServer({
     appType: 'custom',
+    configFile: false,
+    optimizeDeps: {
+      entries: [],
+      noDiscovery: true
+    },
     server: {
+      hmr: false,
       middlewareMode: true
     }
   });

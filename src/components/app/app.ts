@@ -5,6 +5,8 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import type {
+  CodexProjectSummary,
+  CodexSessionSummary,
   HarmonyRenderRequest,
   MessageSharingRequest,
   RefreshRendererListRequest,
@@ -34,6 +36,7 @@ import { NightjarToast } from '../toast/toast';
 import { EuphonyTokenWindow } from '../token-window/token-window';
 import type { LocalDataWorkerMessage } from './local-data-worker';
 import LocalDataWorkerInline from './local-data-worker?worker';
+import { loadLocalCodexBrowserState } from './local-codex-browser';
 import { RequestWorker } from './request-worker';
 import { URLManager } from './url-manager';
 
@@ -140,6 +143,24 @@ export class EuphonyApp extends LitElement {
 
   @state()
   codexSessionData: unknown[][] = [];
+
+  @state()
+  isLocalCodexBrowserMode = false;
+
+  @state()
+  localCodexProjects: CodexProjectSummary[] = [];
+
+  @state()
+  localCodexSessions: CodexSessionSummary[] = [];
+
+  @state()
+  selectedLocalCodexProjectId: string | null = null;
+
+  @state()
+  localCodexWarnings: string[] = [];
+
+  @state()
+  localCodexErrorMessage = '';
 
   @state()
   dataType: DataType = DataType.CONVERSATION;
@@ -454,43 +475,7 @@ export class EuphonyApp extends LitElement {
     }
 
     if (blobPath === null) {
-      // User doesn't provide a JSON path in the URL, we use default demo data
-      const response = await fetch('examples/euphony-convo-100.jsonl');
-      const responseText = await response.text();
-      const conversationList: string[] = responseText
-        .split('\n')
-        .filter(d => d !== '');
-
-      this.dataType = DataType.CONVERSATION;
-      this.allConversationData = conversationList.map(item => {
-        const parsed = parseConversationJSONString(item);
-        if (parsed === null) {
-          throw new Error('Failed to parse conversation JSON string');
-        }
-        return parsed;
-      });
-      console.log(this.allConversationData);
-
-      // Set all the conversations as selected in editor mode
-      if (this.isEditorMode) {
-        this.selectedConversationIDs = new Set();
-        for (let i = 0; i < conversationList.length; i++) {
-          this.selectedConversationIDs.add(i);
-        }
-      }
-
-      this._totalConversationSize = this.allConversationData.length;
-
-      if (this.curPage > this.totalPageNum) {
-        console.error('The conversation index is out of bound.');
-        this.curPage = 1;
-      }
-
-      this.conversationData = this.allConversationData.slice(
-        (this.curPage - 1) * this.itemsPerPage,
-        this.curPage * this.itemsPerPage
-      );
-      this.isLoadingData = false;
+      await this.refreshLocalCodexSessions();
     } else {
       initURL = blobPath;
 
@@ -522,6 +507,39 @@ export class EuphonyApp extends LitElement {
       await this.allChildrenUpdateComplete();
       this.scrollToConversation(urlHash);
     }
+  }
+
+  clearRenderedData() {
+    this.codexSessionData = [];
+    this.allConversationData = [];
+    this.conversationData = [];
+    this.JSONData = [];
+    this.selectedConversationIDs = new Set();
+    this._totalConversationSize = 0;
+    this._totalConversationSizeIncludingUnfiltered = 0;
+  }
+
+  async refreshLocalCodexSessions(
+    preferredProjectId: string | null = this.selectedLocalCodexProjectId
+  ) {
+    this.isLocalCodexBrowserMode = true;
+    this.isLoadingData = true;
+    this.isLoadingFromCache = false;
+    this.isLoadingFromClipboard = false;
+    this.clearRenderedData();
+    this.dataType = DataType.CONVERSATION;
+
+    const localState = await loadLocalCodexBrowserState(
+      this.apiManager,
+      preferredProjectId
+    );
+
+    this.localCodexProjects = localState.projects;
+    this.localCodexSessions = localState.sessions;
+    this.selectedLocalCodexProjectId = localState.selectedProjectId;
+    this.localCodexWarnings = localState.warnings;
+    this.localCodexErrorMessage = localState.errorMessage;
+    this.isLoadingData = false;
   }
 
   //==========================================================================||
@@ -1329,10 +1347,8 @@ export class EuphonyApp extends LitElement {
     }
   };
 
-  loadDataFromText = (
-    sourceText: string,
-    sourceName: 'clipboard' | 'file'
-  ) => {
+  loadDataFromText = (sourceText: string, sourceName: 'clipboard' | 'file') => {
+    this.isLocalCodexBrowserMode = false;
     this.curPage = 1;
     this.resetHash();
     const requestID = this.localDataWorkerRequestID;
@@ -1353,6 +1369,7 @@ export class EuphonyApp extends LitElement {
   };
 
   loadDataFromFile = (sourceFile: File) => {
+    this.isLocalCodexBrowserMode = false;
     this.curPage = 1;
     this.resetHash();
     const requestID = this.localDataWorkerRequestID;
@@ -1491,6 +1508,151 @@ export class EuphonyApp extends LitElement {
       });
   }
 
+  localCodexProjectClicked(projectId: string) {
+    if (projectId === this.selectedLocalCodexProjectId) {
+      return;
+    }
+
+    this.refreshLocalCodexSessions(projectId).then(
+      () => {},
+      () => {}
+    );
+  }
+
+  renderLocalCodexBrowser() {
+    const selectedProject = this.localCodexProjects.find(
+      project => project.id === this.selectedLocalCodexProjectId
+    );
+
+    const projectButtons = this.localCodexProjects.map(
+      project => html`
+        <button
+          class="local-codex-project-button"
+          ?is-selected=${project.id === this.selectedLocalCodexProjectId}
+          @click=${() => {
+            this.localCodexProjectClicked(project.id);
+          }}
+        >
+          <span class="local-codex-project-name">${project.name}</span>
+          <span class="local-codex-project-path"
+            >${project.path ?? project.id}</span
+          >
+          <span class="local-codex-project-count"
+            >${NUM_FORMATTER(project.sessionCount)}</span
+          >
+        </button>
+      `
+    );
+
+    const sessionRows = this.localCodexSessions.map(
+      session => html`
+        <li class="local-codex-session-row">
+          <article class="local-codex-session-content">
+            <span class="local-codex-session-main">
+              <span class="local-codex-session-title">${session.title}</span>
+              <span class="local-codex-session-preview"
+                >${session.preview}</span
+              >
+              <span class="local-codex-session-path"
+                >${session.cwd ?? 'Unknown project'}</span
+              >
+            </span>
+            <span class="local-codex-session-meta">
+              ${session.archived
+                ? html`<span class="local-codex-archived">Archived</span>`
+                : ''}
+              <time
+                datetime=${ifDefined(
+                  session.updatedAt ?? session.createdAt ?? undefined
+                )}
+                >${session.updatedAt ??
+                session.createdAt ??
+                'Unknown time'}</time
+              >
+            </span>
+          </article>
+        </li>
+      `
+    );
+
+    const warningRows = this.localCodexWarnings.map(
+      warning => html`<li>${warning}</li>`
+    );
+
+    let bodyTemplate = html``;
+    if (this.localCodexErrorMessage !== '') {
+      bodyTemplate = html`
+        <div class="local-codex-state-message" role="alert">
+          ${this.localCodexErrorMessage}
+        </div>
+      `;
+    } else if (this.localCodexProjects.length === 0) {
+      bodyTemplate = html`
+        <div class="local-codex-state-message" role="status">
+          No local Codex sessions found.
+        </div>
+      `;
+    } else {
+      bodyTemplate = html`
+        <div class="local-codex-browser-grid">
+          <section class="local-codex-projects" aria-label="Codex projects">
+            ${projectButtons}
+          </section>
+          <section class="local-codex-sessions" aria-label="Codex sessions">
+            <div class="local-codex-section-header">
+              <div>
+                <h2>${selectedProject?.name ?? 'Sessions'}</h2>
+                <p>${selectedProject?.path ?? selectedProject?.id ?? ''}</p>
+              </div>
+              <span
+                >${NUM_FORMATTER(this.localCodexSessions.length)} sessions</span
+              >
+            </div>
+            ${this.localCodexSessions.length === 0
+              ? html`
+                  <div class="local-codex-state-message" role="status">
+                    No sessions found for this project.
+                  </div>
+                `
+              : html`<ul class="local-codex-session-list">
+                  ${sessionRows}
+                </ul>`}
+          </section>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="local-codex-browser">
+        <div class="local-codex-browser-header">
+          <div>
+            <h1>Local Codex Sessions</h1>
+            <p>
+              Browse sessions grouped by project from your local Codex home.
+            </p>
+          </div>
+          <button
+            class="button local-codex-refresh-button"
+            @click=${() => {
+              this.refreshLocalCodexSessions().then(
+                () => {},
+                () => {}
+              );
+            }}
+          >
+            Refresh
+          </button>
+        </div>
+        ${this.localCodexWarnings.length > 0
+          ? html`<ul class="local-codex-warnings">
+              ${warningRows}
+            </ul>`
+          : ''}
+        ${bodyTemplate}
+      </div>
+    `;
+  }
+
   loadData = async ({
     blobURL,
     offset,
@@ -1511,6 +1673,7 @@ export class EuphonyApp extends LitElement {
     loadedURL: string;
   }> => {
     this.isLoadingData = true;
+    this.isLocalCodexBrowserMode = false;
     this.isLoadingFromClipboard = false;
     this.codexSessionData = [];
     let loadedURL = blobURL;
@@ -2231,6 +2394,49 @@ export class EuphonyApp extends LitElement {
         </div> `;
     }
 
+    const contentCenterTemplate = this.isLocalCodexBrowserMode
+      ? this.renderLocalCodexBrowser()
+      : html`
+          <div
+            class="grid-header"
+            ?is-hidden=${this.totalConversationSize === 0}
+          >
+            ${selectAllButtonTemplate}
+            <div class="count-label">
+              ${this.isEditorMode
+                ? `${NUM_FORMATTER(this.selectedConversationIDs.size)} / `
+                : ''}
+              ${NUM_FORMATTER(this.totalConversationSize)}
+              ${this.jmespathQuery !== '' ? 'matched' : 'total'}
+              ${this.dataType === DataType.JSON ? 'items' : 'conversations'}
+              ${this.jmespathQuery !== ''
+                ? `(${NUM_FORMATTER(this.totalConversationSizeIncludingUnfiltered)} total)`
+                : ''}
+            </div>
+            ${queryLabels}
+          </div>
+
+          <div class="conversation-list" ?is-grid-view=${this.isGridView}>
+            ${conversationsTemplate}
+          </div>
+
+          <div class="footer">
+            <nightjar-pagination
+              ?is-hidden=${this.totalConversationSize < 1}
+              .curPage=${this.curPage}
+              .totalPageNum=${this.totalPageNum}
+              .itemsPerPage=${this.itemsPerPage}
+              .itemsPerPageOptions=${[1, 2, 3, 4, 5, 10, 25, 50, 100]}
+              @page-clicked=${(e: CustomEvent<number>) => {
+                this.pageClicked(e);
+              }}
+              @items-per-page-changed=${(e: CustomEvent<number>) => {
+                this.itemsPerPageChanged(e);
+              }}
+            ></nightjar-pagination>
+          </div>
+        `;
+
     return html`
       <div
         class="app"
@@ -2445,51 +2651,13 @@ export class EuphonyApp extends LitElement {
 
           <div
             class="empty-error-message"
-            ?is-hidden=${this.totalConversationSize > 0}
+            ?is-hidden=${this.isLocalCodexBrowserMode ||
+            this.totalConversationSize > 0}
           >
             ☹️ No conversation loaded
           </div>
 
-          <div class="content-center">
-            <div
-              class="grid-header"
-              ?is-hidden=${this.totalConversationSize === 0}
-            >
-              ${selectAllButtonTemplate}
-              <div class="count-label">
-                ${this.isEditorMode
-                  ? `${NUM_FORMATTER(this.selectedConversationIDs.size)} / `
-                  : ''}
-                ${NUM_FORMATTER(this.totalConversationSize)}
-                ${this.jmespathQuery !== '' ? 'matched' : 'total'}
-                ${this.dataType === DataType.JSON ? 'items' : 'conversations'}
-                ${this.jmespathQuery !== ''
-                  ? `(${NUM_FORMATTER(this.totalConversationSizeIncludingUnfiltered)} total)`
-                  : ''}
-              </div>
-              ${queryLabels}
-            </div>
-
-            <div class="conversation-list" ?is-grid-view=${this.isGridView}>
-              ${conversationsTemplate}
-            </div>
-
-            <div class="footer">
-              <nightjar-pagination
-                ?is-hidden=${this.totalConversationSize < 1}
-                .curPage=${this.curPage}
-                .totalPageNum=${this.totalPageNum}
-                .itemsPerPage=${this.itemsPerPage}
-                .itemsPerPageOptions=${[1, 2, 3, 4, 5, 10, 25, 50, 100]}
-                @page-clicked=${(e: CustomEvent<number>) => {
-                  this.pageClicked(e);
-                }}
-                @items-per-page-changed=${(e: CustomEvent<number>) => {
-                  this.itemsPerPageChanged(e);
-                }}
-              ></nightjar-pagination>
-            </div>
-          </div>
+          <div class="content-center">${contentCenterTemplate}</div>
 
           <div class="content-left">
             <div class="content-left-inner"></div>

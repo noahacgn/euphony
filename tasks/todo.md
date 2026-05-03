@@ -77,26 +77,31 @@
     - `src/utils/api-manager.ts`
     - `src/types/common-types.ts` or a new focused type file if justified
 
-- [ ] Task 5: Render project and session summary browser
+- [x] Task 5: Render project and session summary browser
   - Acceptance:
-    - When no `path` query parameter is present, app loads local Codex projects instead of demo conversations.
-    - UI shows project list, selected project, session list, counts, archived marker and manual refresh control.
-    - Empty `CODEX_HOME` or backend errors show a clear empty/error state.
-    - Existing URL input, menu, file input and clipboard loading remain visible or reachable.
-    - No session content is fetched until a session is selected.
+    - [x] When no `path` query parameter is present, app loads local Codex projects instead of demo conversations.
+    - [x] UI shows project list, selected project, session list, counts, archived marker and manual refresh control.
+    - [x] Empty `CODEX_HOME` or backend errors show a clear empty/error state.
+    - [x] Existing URL input, menu, file input and clipboard loading remain visible or reachable.
+    - [x] No session content is fetched until a session is selected.
   - Verify:
-    - `pnpm run build`
-    - Manual browser check with mocked or real backend responses
+    - [x] `node --test tests/frontend/local-codex-browser.test.mjs`
+    - [x] `node --test tests/frontend/api-manager.codex-sessions.test.mjs`
+    - [x] `uv run --with pytest python -m pytest`
+    - [x] `pnpm run build`
+    - [x] Manual browser check with real backend responses at `http://127.0.0.1:8020/`
   - Files:
     - `src/components/app/app.ts`
     - `src/components/app/app.css`
+    - `src/components/app/local-codex-browser.ts`
+    - `tests/frontend/local-codex-browser.test.mjs`
 
 ## Checkpoint: Browsing Skeleton
 
-- [ ] Backend tests pass: `pytest`.
-- [ ] Frontend builds: `pnpm run build`.
-- [ ] App can display project/session summaries without opening a session.
-- [ ] Existing remote/local file loaders are still accessible.
+- [x] Backend tests pass: `pytest`.
+- [x] Frontend builds: `pnpm run build`.
+- [x] App can display project/session summaries without opening a session.
+- [x] Existing remote/local file loaders are still accessible.
 
 ## Phase 4: Session Detail End-to-End
 
