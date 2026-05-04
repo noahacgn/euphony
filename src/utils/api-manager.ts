@@ -6,7 +6,8 @@ import type {
   CodexSessionEvent,
   CodexSessionsResponse,
   HarmonyRenderResponse,
-  RefreshRendererListResponse
+  RefreshRendererListResponse,
+  DeleteCodexSessionsResponse
 } from '../types/common-types';
 import type { Conversation } from '../types/harmony-types';
 
@@ -184,14 +185,36 @@ export class APIManager {
     this.apiBaseURL = apiBaseURL;
   }
 
-  private async getLocalCodexJSON<T>(path: string): Promise<T> {
+  private async getLocalCodexErrorMessage(response: Response): Promise<string> {
+    const responseText = await response.text();
+    if (responseText.trim() === '') {
+      return `HTTP error! status: ${response.status}`;
+    }
+
+    try {
+      const parsed = JSON.parse(responseText) as { detail?: unknown };
+      if (typeof parsed.detail === 'string' && parsed.detail.trim() !== '') {
+        return parsed.detail;
+      }
+    } catch (_) {
+      // 不是 JSON 时回退到原始响应文本
+    }
+
+    return `HTTP error! status: ${response.status}; body=${responseText}`;
+  }
+
+  private async getLocalCodexJSON<T>(
+    path: string,
+    options: RequestInit = {}
+  ): Promise<T> {
     const response = await fetch(`${this.apiBaseURL}${path}`, {
       method: 'GET',
-      credentials: 'include'
+      credentials: 'include',
+      ...options
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(await this.getLocalCodexErrorMessage(response));
     }
 
     return (await response.json()) as T;
@@ -348,6 +371,19 @@ export class APIManager {
   ): Promise<CodexSessionEvent[]> => {
     return this.getLocalCodexJSON<CodexSessionEvent[]>(
       `codex-sessions/sessions/${encodeURIComponent(sessionId)}/`
+    );
+  };
+
+  deleteCodexSessions = async (sessionIds: string[]): Promise<void> => {
+    await this.getLocalCodexJSON<DeleteCodexSessionsResponse>(
+      'codex-sessions/sessions/',
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sessionIds })
+      }
     );
   };
 }

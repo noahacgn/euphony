@@ -2,7 +2,7 @@
 
 ## Overview
 
-Build a read-only local Codex sessions browser for single-user local Euphony. The browser should default on app launch, scan `CODEX_HOME` through the local FastAPI backend, group sessions by Git-root-derived project, list sessions with metadata, and open one session using the existing Codex renderer. Existing URL, clipboard and local file loading must remain available.
+Build a local Codex sessions browser for single-user local Euphony. The browser should default on app launch, scan `CODEX_HOME` through the local FastAPI backend, group sessions by Git-root-derived project, list sessions with metadata, open one session using the existing Codex renderer, and permanently delete scanned rollout JSONL files from the UI when requested. Existing URL, clipboard and local file loading must remain available.
 
 This plan is based on `SPEC.md` and the current code paths:
 
@@ -15,7 +15,7 @@ This plan is based on `SPEC.md` and the current code paths:
 ## Architecture Decisions
 
 - Use JSONL-first metadata extraction. Scan rollout files and `session_index.jsonl`; do not read SQLite in MVP.
-- Keep local file access behind backend APIs. The frontend receives project/session ids and never sends arbitrary filesystem paths.
+- Keep local file access behind backend APIs. The frontend receives project/session ids and never sends arbitrary filesystem paths; the delete flow resolves whitelist paths on the backend.
 - Treat session content as lazy-loaded. Lists use summaries; opening a session fetches the full rollout event array.
 - Use manual refresh only. No polling, file watchers or persistent cache in MVP.
 - Handle malformed JSONL with different strictness by context: list scans are tolerant and report warnings; opening a malformed session fails with a clear error.
@@ -130,15 +130,16 @@ The work is sliced around user-visible paths:
 
 ### Phase 2: Backend API Contract
 
-#### Task 3: Expose local Codex session APIs
+#### Task 3: Expose local Codex session APIs and delete flow
 
-**Description:** Register FastAPI read-only routes for projects, sessions by project, and session content. Use Pydantic response models and keep the route surface separate from existing remote `/blob-jsonl/` behavior.
+**Description:** Register FastAPI routes for projects, sessions by project, session content, and permanent deletion. Use Pydantic response models and keep the route surface separate from existing remote `/blob-jsonl/` behavior.
 
 **Acceptance criteria:**
 
 - [ ] `GET /codex-sessions/projects/` returns projects with counts and warnings.
 - [ ] `GET /codex-sessions/sessions/?projectId=...` returns only sessions for the requested project.
 - [ ] `GET /codex-sessions/sessions/{sessionId}/` returns full event array for a known session.
+- [ ] `DELETE /codex-sessions/sessions/` permanently deletes one or more scanned rollout JSONL files by session id.
 - [ ] API errors include actionable messages and appropriate HTTP status codes.
 - [ ] Existing `/blob-jsonl/`, `/translate/`, `/harmony-render/` routes still behave as before.
 
@@ -225,7 +226,7 @@ The work is sliced around user-visible paths:
 
 ### Phase 4: Session Detail End-to-End
 
-#### Task 6: Open and render one local Codex session
+#### Task 6: Open, render, and delete one local Codex session
 
 **Description:** Connect session selection to lazy detail fetch and feed the returned event array into existing `DataType.CODEX` / `<euphony-codex>` rendering.
 
@@ -236,6 +237,7 @@ The work is sliced around user-visible paths:
 - [ ] Detail read errors show a visible message without clearing the project/session list.
 - [ ] Selected session state is visible in the browser.
 - [ ] Manual refresh preserves selection when possible and clears it safely when the session disappears.
+- [ ] Deleting the selected session from the detail pane clears the detail view and removes the rollout file from the list after refresh.
 
 **Verification:**
 
@@ -283,7 +285,7 @@ The work is sliced around user-visible paths:
 - [ ] `pnpm run build` passes.
 - [ ] Real local `CODEX_HOME` can list projects, list sessions and render at least one session.
 - [ ] Legacy loading flows still work.
-- [ ] No write operations against Codex files exist.
+- [ ] The only write operation against Codex files is the explicit permanent-delete flow, and `session_index.jsonl` is never rewritten.
 
 ### Phase 5: Final Verification and Documentation
 

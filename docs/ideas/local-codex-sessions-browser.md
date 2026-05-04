@@ -6,7 +6,7 @@
 
 ## Recommended Direction
 
-在现有 backend-assisted 模式中增加只读 Codex session API。后端扫描 `CODEX_HOME` 下的 rollout JSONL 和归档目录，抽取 session 元数据并组织成 `Git root -> session -> rollout items` 的派生视图。前端默认进入本地 Codex browser，点击 session 后复用现有 Codex renderer 渲染完整内容。
+在现有 backend-assisted 模式中增加 Codex session API。后端扫描 `CODEX_HOME` 下的 rollout JSONL 和归档目录，抽取 session 元数据并组织成 `Git root -> session -> rollout items` 的派生视图。前端默认进入本地 Codex browser，点击 session 后复用现有 Codex renderer 渲染完整内容，并支持在详情区单条删除或在列表里批量永久删除后端扫描到的 rollout JSONL 源文件。前端只提交 session id，后端把 id 解析回扫描白名单内的 rollout 路径并执行删除；刷新时以磁盘重新扫描结果为准，不会重写 `session_index.jsonl`。
 
 这个方向不改变 Codex CLI 的真实落盘结构。Codex sessions 的真实来源仍然是 append-only JSONL rollout 文件；Euphony 只负责构建更适合浏览的本地索引视图。
 
@@ -24,6 +24,7 @@
 - 后端解析 session id、cwd、Git root、title、preview、createdAt、updatedAt、archived、rolloutPath。
 - 前端默认展示项目列表和 sessions 列表。
 - 点击 session 按需读取完整 JSONL，并用现有 Codex 渲染链路展示。
+- 通过详情区单条删除或列表勾选批量删除，永久移除扫描到的 rollout JSONL 文件。
 - 提供手动 Refresh。
 - 保留现有 URL、剪贴板、本地文件加载入口。
 
@@ -49,6 +50,7 @@ Session 内容来自 rollout JSONL 的完整 `RolloutItem` 序列，不从标题
 GET /codex-sessions/projects/
 GET /codex-sessions/sessions/?projectId=<project-id>
 GET /codex-sessions/sessions/{session-id}/
+DELETE /codex-sessions/sessions/
 ```
 
 `GET /codex-sessions/projects/` 返回项目列表和每个项目的 session 数量。
@@ -57,13 +59,15 @@ GET /codex-sessions/sessions/{session-id}/
 
 `GET /codex-sessions/sessions/{session-id}/` 读取完整 rollout JSONL，返回现有 Codex renderer 能消费的事件数组。
 
+`DELETE /codex-sessions/sessions/` 接收 `{ "sessionIds": [...] }`，由后端把 session id 解析回扫描白名单内的 rollout JSONL 路径并永久删除对应文件。删除后不重写 `session_index.jsonl`，刷新时以磁盘重新扫描结果为准。
+
 ## Not Doing
 
-- 不写入或修改 Codex session 状态。
-- 不做重命名、归档、取消归档、删除 sessions。
+- 不写入或修改 Codex session 状态，除了上面的永久删除流程。
+- 不做重命名、归档、取消归档。
 - 不做文件监听实时更新。
 - 不引入 Electron/Tauri 桌面封装。
-- 不重排 Codex 原始落盘目录。
+- 不重排 Codex 原始落盘目录，也不重写 `session_index.jsonl`。
 - 不允许前端传任意本地文件路径让后端读取。
 
 ## Open Questions

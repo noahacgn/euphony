@@ -118,6 +118,8 @@ The current backend includes a remote URL fetch path for loading JSON and JSONL 
 
 本地 Codex sessions 浏览器依赖 backend-assisted mode。启动本地 FastAPI 后端后，Euphony 会从 `CODEX_HOME` 读取 Codex CLI sessions；未设置 `CODEX_HOME` 时使用当前用户目录下的 `.codex`。这个 API 只适合本机使用，不应部署成远程多用户服务。
 
+这个浏览器不只是只读查看器。你可以在 session 详情区单条永久删除某个 rollout JSONL 文件，也可以在当前项目的 session 列表里勾选多个 session 后批量永久删除。前端只提交 session id，后端负责把 id 解析回扫描白名单内的文件路径并删除对应 rollout；刷新时按磁盘重新扫描，不会重写 `session_index.jsonl`。
+
 PowerShell 一键启动：
 
 ```powershell

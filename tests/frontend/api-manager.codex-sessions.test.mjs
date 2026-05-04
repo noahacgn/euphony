@@ -134,6 +134,51 @@ test('APIManager reads local Codex projects, sessions, and detail through backen
   }
 });
 
+test('APIManager deletes local Codex sessions through backend APIs', async () => {
+  const { APIManager } = await loadAPIManagerModule();
+  const requestedRequests = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    requestedRequests.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      body: init?.body ?? null,
+      headers: init?.headers ?? null
+    });
+
+    const url = String(input);
+    if (
+      url.endsWith('/codex-sessions/sessions/') &&
+      init?.method === 'DELETE'
+    ) {
+      return Response.json({
+        deletedSessionIds: ['session-1', 'session-2']
+      });
+    }
+
+    return new Response('not found', { status: 404 });
+  };
+
+  try {
+    const manager = new APIManager('http://localhost:8020/');
+
+    await manager.deleteCodexSessions(['session-1', 'session-2']);
+
+    assert.deepEqual(requestedRequests, [
+      {
+        url: 'http://localhost:8020/codex-sessions/sessions/',
+        method: 'DELETE',
+        body: JSON.stringify({ sessionIds: ['session-1', 'session-2'] }),
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('APIManager sends refresh=true only for explicit local Codex refreshes', async () => {
   const { APIManager } = await loadAPIManagerModule();
   const requestedURLs = [];
@@ -168,6 +213,7 @@ test('BrowserAPIManager does not expose local Codex session APIs', async () => {
   assert.equal(manager.listCodexProjects, undefined);
   assert.equal(manager.listCodexProjectSessions, undefined);
   assert.equal(manager.readCodexSession, undefined);
+  assert.equal(manager.deleteCodexSessions, undefined);
 });
 
 test('BrowserAPIManager loads the Harmony tokenizer only when rendering is requested', async () => {

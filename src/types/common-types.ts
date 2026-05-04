@@ -240,4 +240,8 @@ export interface CodexSessionsResponse {
   warnings: string[];
 }
 
+export interface DeleteCodexSessionsResponse {
+  deletedSessionIds: string[];
+}
+
 export type CodexSessionEvent = Record<string, unknown>;

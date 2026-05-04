@@ -779,6 +779,45 @@ button,
   text-align: right;
 }
 
+.local-codex-session-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+  padding-bottom: 4px;
+}
+
+.local-codex-session-selection-status {
+  min-width: 0;
+  color: var(--gray-600);
+  font-size: var(--font-d3);
+  line-height: 1.35;
+}
+
+.local-codex-session-action-buttons {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.local-codex-session-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.local-codex-session-checkbox {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 16px;
+  height: 16px;
+  margin: 0 0 0 4px;
+  accent-color: var(--blue-600);
+}
+
 .local-codex-session-list {
   display: flex;
   flex-direction: column;
@@ -789,7 +828,8 @@ button,
 }
 
 .local-codex-session-content {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   height: auto;
   display: flex;
   justify-content: space-between;
@@ -806,6 +846,11 @@ button,
   &[is-selected] {
     border-color: var(--blue-300);
     background: var(--blue-50);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 }
 
@@ -861,6 +906,26 @@ button,
   border-radius: 999px;
   color: var(--gray-700);
   background: var(--gray-100);
+}
+
+.local-codex-session-select-button:disabled,
+.local-codex-session-delete-button:disabled,
+.local-codex-detail-delete-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.local-codex-session-delete-button,
+.local-codex-detail-delete-button {
+  border-color: var(--red-200);
+  color: var(--red-700);
+  background: var(--red-50);
+}
+
+.local-codex-session-delete-button:hover:not(:disabled),
+.local-codex-detail-delete-button:hover:not(:disabled) {
+  border-color: var(--red-300);
+  background: var(--red-100);
 }
 
 .local-codex-state-message {

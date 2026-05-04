@@ -58,6 +58,10 @@ class CodexSessionNotFoundError(LookupError):
     pass
 
 
+class CodexSessionDeletionError(RuntimeError):
+    pass
+
+
 def resolve_codex_home(codex_home: Path | str | None = None) -> Path:
     raw_codex_home = codex_home
     if raw_codex_home is None:
@@ -124,6 +128,54 @@ def read_codex_session_events(
         ) from exc
 
 
+def delete_codex_session_rollouts(
+    session_ids: list[str],
+    codex_home: Path | str | None = None,
+    *,
+    scan: CodexSessionScanResult | None = None,
+) -> list[str]:
+    resolved_codex_home = resolve_codex_home(codex_home)
+    requested_session_ids = _normalize_requested_session_ids(session_ids)
+    codex_scan = scan if scan is not None else scan_codex_sessions(resolved_codex_home)
+    session_by_id = {session.id: session for session in codex_scan.sessions}
+
+    missing_session_ids = [
+        session_id
+        for session_id in requested_session_ids
+        if session_id not in session_by_id
+    ]
+    if missing_session_ids:
+        formatted_missing_session_ids = ", ".join(
+            repr(session_id) for session_id in missing_session_ids
+        )
+        raise CodexSessionNotFoundError(
+            "Failed to delete Codex sessions "
+            f"from {resolved_codex_home}: session id(s) {formatted_missing_session_ids} "
+            "are not known from the discovered rollout whitelist. Refresh the Codex "
+            "session list and select sessions returned by the local backend."
+        )
+
+    deleted_session_ids: list[str] = []
+    for session_id in requested_session_ids:
+        rollout_path = Path(session_by_id[session_id].rollout_path)
+        try:
+            rollout_path.unlink()
+        except FileNotFoundError as exc:
+            raise CodexSessionDeletionError(
+                "Failed to delete Codex session "
+                f"{session_id!r} at {rollout_path.resolve(strict=False)}: the rollout "
+                "file no longer exists."
+            ) from exc
+        except OSError as exc:
+            raise CodexSessionDeletionError(
+                "Failed to delete Codex session "
+                f"{session_id!r} at {rollout_path.resolve(strict=False)}: {exc}."
+            ) from exc
+        deleted_session_ids.append(session_id)
+
+    return deleted_session_ids
+
+
 def _discover_rollout_paths(codex_home: Path) -> list[tuple[Path, bool]]:
     rollout_paths: list[tuple[Path, bool]] = []
 
@@ -148,6 +200,30 @@ def _find_rollout_path_for_session(session_id: str, codex_home: Path) -> Path | 
             return rollout_path
 
     return None
+
+
+def _normalize_requested_session_ids(session_ids: list[str]) -> list[str]:
+    normalized_session_ids: list[str] = []
+    seen_session_ids: set[str] = set()
+
+    for raw_session_id in session_ids:
+        session_id = raw_session_id.strip()
+        if session_id == "":
+            raise ValueError(
+                "Failed to delete Codex sessions: sessionIds must not contain empty "
+                "values."
+            )
+        if session_id in seen_session_ids:
+            continue
+        seen_session_ids.add(session_id)
+        normalized_session_ids.append(session_id)
+
+    if not normalized_session_ids:
+        raise ValueError(
+            "Failed to delete Codex sessions: sessionIds must not be empty."
+        )
+
+    return normalized_session_ids
 
 
 def _read_session_ids_for_whitelist(path: Path) -> set[str]:

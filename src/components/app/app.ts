@@ -65,6 +65,7 @@ import iconFilter from '../../images/icon-filter.svg?raw';
 import iconInfoSmall from '../../images/icon-info-circle-small.svg?raw';
 import iconLaptop from '../../images/icon-macbook.svg?raw';
 import iconSetting from '../../images/icon-settings.svg?raw';
+import iconTrash from '../../images/icon-trash.svg?raw';
 
 import '../codex/codex';
 import '../confirm-dialog/confirm-dialog';
@@ -104,6 +105,7 @@ type MenuItems =
 const NUM_FORMATTER = format(',d');
 const DEFAULT_ITEMS_PER_PAGE = 10;
 const HEADER_HEIGHT = 72;
+const LOCAL_CODEX_DELETE_ACTION_KEY = 'local-codex-session-delete';
 
 type ToastType = 'success' | 'warning' | 'error';
 const TOAST_DURATIONS: Record<ToastType, number> = {
@@ -165,6 +167,9 @@ export class EuphonyApp extends LitElement {
   localCodexSessions: CodexSessionSummary[] = [];
 
   @state()
+  selectedLocalCodexSessionIDs = new Set<string>();
+
+  @state()
   selectedLocalCodexProjectId: string | null = null;
 
   @state()
@@ -190,6 +195,9 @@ export class EuphonyApp extends LitElement {
 
   @state()
   isLoadingLocalCodexSession = false;
+
+  @state()
+  isDeletingLocalCodexSessions = false;
 
   @state()
   dataType: DataType = DataType.CONVERSATION;
@@ -552,6 +560,136 @@ export class EuphonyApp extends LitElement {
     this._totalConversationSizeIncludingUnfiltered = 0;
   }
 
+  clearLocalCodexSessionDetailState() {
+    this.selectedLocalCodexSessionId = null;
+    this.localCodexDetailErrorMessage = '';
+    this.isLoadingLocalCodexSession = false;
+    this.activeLocalCodexSessionRequestID = null;
+    this.clearRenderedData();
+    this.dataType = DataType.CONVERSATION;
+  }
+
+  syncSelectedLocalCodexSessionIDs() {
+    const visibleSessionIds = new Set(
+      this.localCodexSessions.map(session => session.id)
+    );
+    this.selectedLocalCodexSessionIDs = new Set(
+      [...this.selectedLocalCodexSessionIDs].filter(sessionId =>
+        visibleSessionIds.has(sessionId)
+      )
+    );
+  }
+
+  toggleLocalCodexSessionSelection(
+    sessionId: string,
+    isSelected: boolean
+  ): void {
+    const nextSelectedSessionIDs = new Set(this.selectedLocalCodexSessionIDs);
+    if (isSelected) {
+      nextSelectedSessionIDs.add(sessionId);
+    } else {
+      nextSelectedSessionIDs.delete(sessionId);
+    }
+    this.selectedLocalCodexSessionIDs = nextSelectedSessionIDs;
+  }
+
+  toggleSelectAllLocalCodexSessions(): void {
+    if (this.localCodexSessions.length === 0) {
+      return;
+    }
+
+    if (
+      this.selectedLocalCodexSessionIDs.size === this.localCodexSessions.length
+    ) {
+      this.selectedLocalCodexSessionIDs = new Set();
+      return;
+    }
+
+    this.selectedLocalCodexSessionIDs = new Set(
+      this.localCodexSessions.map(session => session.id)
+    );
+  }
+
+  promptLocalCodexSessionDeletion(
+    sessionIds: string[],
+    description: string
+  ): void {
+    if (sessionIds.length === 0) {
+      return;
+    }
+
+    const deleteLabel =
+      sessionIds.length === 1 ? 'Delete session' : 'Delete selected';
+    this.confirmDialogComponent?.show(
+      {
+        header:
+          sessionIds.length === 1
+            ? 'Delete Codex session'
+            : 'Delete Codex sessions',
+        message:
+          sessionIds.length === 1
+            ? `Delete the rollout JSONL file for ${description}? This permanently removes the file from disk and cannot be undone.`
+            : `Delete ${NUM_FORMATTER(sessionIds.length)} selected rollout JSONL files from disk? This permanently removes the files and cannot be undone.`,
+        yesButtonText: deleteLabel,
+        actionKey: LOCAL_CODEX_DELETE_ACTION_KEY
+      },
+      () => {
+        this.deleteLocalCodexSessions(sessionIds).then(
+          () => {},
+          () => {}
+        );
+      }
+    );
+  }
+
+  async deleteLocalCodexSessions(sessionIds: string[]): Promise<void> {
+    const normalizedSessionIds = [...new Set(sessionIds)].filter(
+      sessionId => sessionId.trim() !== ''
+    );
+    if (normalizedSessionIds.length === 0) {
+      return;
+    }
+
+    const currentProjectId = this.selectedLocalCodexProjectId;
+    const deletedSessionIdSet = new Set(normalizedSessionIds);
+    const selectedSessionWasDeleted =
+      this.selectedLocalCodexSessionId !== null &&
+      deletedSessionIdSet.has(this.selectedLocalCodexSessionId);
+
+    this.isDeletingLocalCodexSessions = true;
+    try {
+      await this.apiManager.deleteCodexSessions(normalizedSessionIds);
+
+      this.selectedLocalCodexSessionIDs = new Set(
+        [...this.selectedLocalCodexSessionIDs].filter(
+          sessionId => !deletedSessionIdSet.has(sessionId)
+        )
+      );
+
+      if (selectedSessionWasDeleted) {
+        this.clearLocalCodexSessionDetailState();
+      }
+
+      await this.refreshLocalCodexSessions(currentProjectId, true);
+      this.syncSelectedLocalCodexSessionIDs();
+
+      this.toastMessage =
+        normalizedSessionIds.length === 1
+          ? `Deleted Codex session ${normalizedSessionIds[0]}.`
+          : `Deleted ${NUM_FORMATTER(normalizedSessionIds.length)} Codex sessions.`;
+      this.toastType = 'success';
+      this.toastComponent?.show();
+    } catch (error) {
+      this.toastMessage = `Failed to delete local Codex sessions.\n\n${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      this.toastType = 'error';
+      this.toastComponent?.show();
+    } finally {
+      this.isDeletingLocalCodexSessions = false;
+    }
+  }
+
   async refreshLocalCodexSessions(
     preferredProjectId: string | null = this.selectedLocalCodexProjectId,
     forceRefresh = false
@@ -587,6 +725,7 @@ export class EuphonyApp extends LitElement {
     this.localCodexProjectWarnings = localState.projectWarnings;
     this.localCodexWarnings = localState.warnings;
     this.localCodexErrorMessage = localState.errorMessage;
+    this.syncSelectedLocalCodexSessionIDs();
 
     if (
       preferredSessionId !== null &&
@@ -614,6 +753,7 @@ export class EuphonyApp extends LitElement {
     this.localCodexErrorMessage = '';
     this.localCodexSessionsErrorMessage = '';
     this.localCodexDetailErrorMessage = '';
+    this.selectedLocalCodexSessionIDs = new Set();
     this.clearRenderedData();
     this.dataType = DataType.CONVERSATION;
 
@@ -632,6 +772,7 @@ export class EuphonyApp extends LitElement {
     this.selectedLocalCodexSessionId = localState.selectedSessionId;
     this.localCodexWarnings = localState.warnings;
     this.localCodexSessionsErrorMessage = localState.errorMessage;
+    this.syncSelectedLocalCodexSessionIDs();
     this.isLoadingLocalCodexSessions = false;
   }
 
@@ -1674,6 +1815,10 @@ export class EuphonyApp extends LitElement {
     const selectedSession = this.localCodexSessions.find(
       session => session.id === this.selectedLocalCodexSessionId
     );
+    const selectedSessionCount = this.selectedLocalCodexSessionIDs.size;
+    const allSessionsSelected =
+      selectedSessionCount > 0 &&
+      selectedSessionCount === this.localCodexSessions.length;
 
     const projectOptions = this.localCodexProjects.map(
       project => html`
@@ -1689,9 +1834,23 @@ export class EuphonyApp extends LitElement {
     const sessionRows = this.localCodexSessions.map(
       session => html`
         <li class="local-codex-session-row">
+          <input
+            class="local-codex-session-checkbox"
+            id=${`local-codex-session-select-${session.id}`}
+            name=${`local-codex-session-select-${session.id}`}
+            type="checkbox"
+            .checked=${this.selectedLocalCodexSessionIDs.has(session.id)}
+            ?disabled=${this.isLoadingData || this.isDeletingLocalCodexSessions}
+            aria-label=${`Select session ${session.title}`}
+            @change=${(e: Event) => {
+              const target = e.target as HTMLInputElement;
+              this.toggleLocalCodexSessionSelection(session.id, target.checked);
+            }}
+          />
           <button
             class="local-codex-session-content"
             ?is-selected=${session.id === this.selectedLocalCodexSessionId}
+            ?disabled=${this.isLoadingData || this.isDeletingLocalCodexSessions}
             @click=${() => {
               this.localCodexSessionClicked(session);
             }}
@@ -1735,12 +1894,25 @@ export class EuphonyApp extends LitElement {
               : ''}
             <time
               datetime=${ifDefined(
-                selectedSession.updatedAt ?? selectedSession.createdAt ?? undefined
-              )}
+                  selectedSession.updatedAt ?? selectedSession.createdAt ?? undefined
+                )}
               >${selectedSession.updatedAt ??
               selectedSession.createdAt ??
               'Unknown time'}</time
             >
+            <button
+              class="button local-codex-detail-delete-button"
+              ?disabled=${this.isLoadingData || this.isDeletingLocalCodexSessions}
+              @click=${() => {
+                this.promptLocalCodexSessionDeletion(
+                  [selectedSession.id],
+                  `"${selectedSession.title}" (${selectedSession.id})`
+                );
+              }}
+            >
+              <span class="svg-icon icon">${unsafeHTML(iconTrash)}</span>
+              Delete session
+            </button>
           </span>
         `
       : html`
@@ -1794,15 +1966,16 @@ export class EuphonyApp extends LitElement {
             <div class="local-codex-project-picker">
               <label for="local-codex-project-select">Project</label>
               <div class="local-codex-project-select-wrapper">
-                <select
-                  id="local-codex-project-select"
-                  .value=${this.selectedLocalCodexProjectId ?? ''}
-                  ?disabled=${this.isLoadingData}
-                  @change=${(e: Event) => {
-                    const target = e.target as HTMLSelectElement;
-                    this.localCodexProjectClicked(target.value);
-                  }}
-                >
+                  <select
+                    id="local-codex-project-select"
+                    .value=${this.selectedLocalCodexProjectId ?? ''}
+                  ?disabled=${this.isLoadingData ||
+                  this.isDeletingLocalCodexSessions}
+                    @change=${(e: Event) => {
+                      const target = e.target as HTMLSelectElement;
+                      this.localCodexProjectClicked(target.value);
+                    }}
+                  >
                   ${projectOptions}
                 </select>
               </div>
@@ -1817,9 +1990,44 @@ export class EuphonyApp extends LitElement {
                   <h2>Sessions</h2>
                   <p>${selectedProject?.name ?? 'Select a project'}</p>
                 </div>
-                <span
-                  >${NUM_FORMATTER(this.localCodexSessions.length)} sessions</span
-                >
+                <span>${NUM_FORMATTER(this.localCodexSessions.length)} sessions</span>
+              </div>
+              <div class="local-codex-session-actions">
+                <span class="local-codex-session-selection-status">
+                  ${selectedSessionCount > 0
+                    ? `${NUM_FORMATTER(selectedSessionCount)} selected`
+                    : 'No sessions selected'}
+                </span>
+                <div class="local-codex-session-action-buttons">
+                  <button
+                    class="button local-codex-session-select-button"
+                    ?disabled=${this.isLoadingData ||
+                    this.isDeletingLocalCodexSessions ||
+                    this.localCodexSessions.length === 0}
+                    @click=${() => {
+                      this.toggleSelectAllLocalCodexSessions();
+                    }}
+                  >
+                    ${allSessionsSelected ? 'Clear selection' : 'Select all'}
+                  </button>
+                  <button
+                    class="button local-codex-session-delete-button"
+                    ?disabled=${this.isLoadingData ||
+                    this.isDeletingLocalCodexSessions ||
+                    selectedSessionCount === 0}
+                    @click=${() => {
+                      this.promptLocalCodexSessionDeletion(
+                        [...this.selectedLocalCodexSessionIDs],
+                        `${NUM_FORMATTER(selectedSessionCount)} selected session${
+                          selectedSessionCount === 1 ? '' : 's'
+                        }`
+                      );
+                    }}
+                  >
+                    <span class="svg-icon icon">${unsafeHTML(iconTrash)}</span>
+                    Delete selected
+                  </button>
+                </div>
               </div>
               ${this.localCodexSessionsErrorMessage !== ''
                 ? html`
@@ -1869,6 +2077,7 @@ export class EuphonyApp extends LitElement {
           </div>
           <button
             class="button local-codex-refresh-button"
+            ?disabled=${this.isLoadingData || this.isDeletingLocalCodexSessions}
             @click=${() => {
               this.refreshLocalCodexSessions(
                 this.selectedLocalCodexProjectId,

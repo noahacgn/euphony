@@ -39,11 +39,12 @@
 
 ## Phase 2: Backend API Contract
 
-- [x] Task 3: Expose local Codex session APIs
+- [x] Task 3: Expose local Codex session APIs and delete flow
   - Acceptance:
     - [x] `GET /codex-sessions/projects/` returns projects with counts and warnings.
     - [x] `GET /codex-sessions/sessions/?projectId=...` returns only sessions for the requested project.
     - [x] `GET /codex-sessions/sessions/{sessionId}/` returns full event array for a known session.
+    - [x] `DELETE /codex-sessions/sessions/` permanently deletes one or more scanned rollout JSONL files by session id.
     - [x] API errors include actionable messages and appropriate HTTP status codes.
     - [x] Existing `/blob-jsonl/`, `/translate/`, `/harmony-render/` routes still behave as before.
   - Verify:
@@ -105,13 +106,14 @@
 
 ## Phase 4: Session Detail End-to-End
 
-- [x] Task 6: Open and render one local Codex session
+- [x] Task 6: Open, render, and delete one local Codex session
   - Acceptance:
     - [x] Clicking a session fetches detail exactly for that session id.
     - [x] Successful detail read renders through existing `<euphony-codex>` content path.
     - [x] Detail read errors show a visible message without clearing the project/session list.
     - [x] Selected session state is visible in the browser.
     - [x] Manual refresh preserves selection when possible and clears it safely when the session disappears.
+    - [x] Deleting the selected session from the detail pane clears the detail view and removes the rollout file from the list after refresh.
   - Verify:
     - [x] `node --test tests/frontend/local-codex-browser.test.mjs`
     - [x] `node --test tests/frontend/api-manager.codex-sessions.test.mjs`
@@ -149,7 +151,7 @@
 - [x] `pnpm run build` passes.
 - [x] Real local `CODEX_HOME` can list projects, list sessions and render at least one session.
 - [x] Legacy loading flows still work.
-- [x] No write operations against Codex files exist.
+- [x] The only write operation against Codex files is the explicit permanent-delete flow, and `session_index.jsonl` is never rewritten.
 
 ## Phase 5: Final Verification and Documentation
 

@@ -31,10 +31,12 @@ from pydantic import BaseModel
 
 from codex_sessions import (
     CodexProjectSummary,
+    CodexSessionDeletionError,
     CodexSessionScanResult,
     CodexSessionNotFoundError,
     CodexSessionSummary,
     RolloutParseError,
+    delete_codex_session_rollouts,
     read_codex_session_events,
     scan_codex_sessions,
 )
@@ -113,6 +115,14 @@ class CodexSessionAPIResponse(BaseModel):
 class CodexSessionsAPIResponse(BaseModel):
     sessions: list[CodexSessionAPIResponse]
     warnings: list[str]
+
+
+class DeleteCodexSessionsRequestBody(BaseModel):
+    sessionIds: list[str]
+
+
+class DeleteCodexSessionsAPIResponse(BaseModel):
+    deletedSessionIds: list[str]
 
 
 class HarmonyRendererListResult(BaseModel):
@@ -480,6 +490,35 @@ async def get_codex_project_sessions(
         ],
         warnings=scan.warnings,
     )
+
+
+@fastapi_app.delete(
+    "/codex-sessions/sessions/",
+    response_model=DeleteCodexSessionsAPIResponse,
+)
+async def delete_codex_project_sessions(
+    request: Request,
+    delete_request: DeleteCodexSessionsRequestBody,
+) -> DeleteCodexSessionsAPIResponse:
+    global _codex_scan_cache
+    _assert_local_codex_request(request)
+    scan = await _get_codex_session_scan()
+    try:
+        deleted_session_ids = await asyncio.to_thread(
+            delete_codex_session_rollouts,
+            delete_request.sessionIds,
+            scan=scan,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except CodexSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CodexSessionDeletionError as exc:
+        _codex_scan_cache = None
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    else:
+        _codex_scan_cache = None
+        return DeleteCodexSessionsAPIResponse(deletedSessionIds=deleted_session_ids)
 
 
 @fastapi_app.get("/codex-sessions/sessions/{session_id}/")

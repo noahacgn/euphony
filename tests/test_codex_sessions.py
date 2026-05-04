@@ -12,8 +12,10 @@ sys.path.insert(0, str(SERVER_DIR))
 
 # 测试需要先把 server 目录加入 sys.path，才能按生产模块名导入。
 from codex_sessions import (  # noqa: E402
+    CodexSessionDeletionError,
     CodexSessionNotFoundError,
     RolloutParseError,
+    delete_codex_session_rollouts,
     read_codex_session_events,
     scan_codex_sessions,
 )
@@ -320,6 +322,107 @@ def test_unknown_session_id_returns_controlled_not_found_error(
     assert "Refresh the Codex session list" in message
 
 
+def test_delete_codex_session_rollouts_rejects_unknown_ids_before_mutation(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    (project_root / ".git").mkdir(parents=True)
+
+    active_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T12-00-00-delete-active.jsonl"
+    )
+    archived_rollout = (
+        codex_home
+        / "archived_sessions"
+        / "2026"
+        / "05"
+        / "01"
+        / "rollout-2026-05-01T12-00-00-delete-archived.jsonl"
+    )
+    write_jsonl(
+        active_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T12:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "delete-active", "cwd": str(project_root)},
+            }
+        ],
+    )
+    write_jsonl(
+        archived_rollout,
+        [
+            {
+                "timestamp": "2026-05-01T12:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "delete-archived", "cwd": str(project_root)},
+            }
+        ],
+    )
+
+    with pytest.raises(CodexSessionNotFoundError) as exc_info:
+        delete_codex_session_rollouts(
+            ["delete-active", "missing-session"],
+            codex_home,
+        )
+
+    message = str(exc_info.value)
+    assert "missing-session" in message
+    assert active_rollout.exists()
+    assert archived_rollout.exists()
+
+    deleted_session_ids = delete_codex_session_rollouts(
+        ["delete-active", "delete-archived"],
+        codex_home,
+    )
+    assert deleted_session_ids == ["delete-active", "delete-archived"]
+    assert not active_rollout.exists()
+    assert not archived_rollout.exists()
+
+
+def test_delete_codex_session_rollouts_reports_filesystem_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T13-00-00-delete-error.jsonl"
+    )
+    write_jsonl(
+        rollout,
+        [
+            {
+                "timestamp": "2026-05-03T13:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "delete-error"},
+            }
+        ],
+    )
+
+    def fail_unlink(self: Path) -> None:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+
+    with pytest.raises(CodexSessionDeletionError) as exc_info:
+        delete_codex_session_rollouts(["delete-error"], codex_home)
+
+    message = str(exc_info.value)
+    assert "delete-error" in message
+    assert "permission denied" in message
+
+
 def test_malformed_detail_read_reports_session_and_rollout_context(
     tmp_path: Path,
 ) -> None:
@@ -554,6 +657,142 @@ def test_codex_session_api_lists_projects_sessions_and_detail(
     assert detail_response.json() == active_events
 
 
+def test_codex_session_api_deletes_single_and_batch_sessions_and_refreshes_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    nested_cwd = project_root / "packages" / "viewer"
+    other_project = tmp_path / "workspace" / "other-project"
+    (project_root / ".git").mkdir(parents=True)
+    nested_cwd.mkdir(parents=True)
+    other_project.mkdir(parents=True)
+
+    active_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T15-30-00-delete-active.jsonl"
+    )
+    archived_rollout = (
+        codex_home
+        / "archived_sessions"
+        / "2026"
+        / "05"
+        / "02"
+        / "rollout-2026-05-02T15-30-00-delete-archived.jsonl"
+    )
+    other_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "01"
+        / "rollout-2026-05-01T15-30-00-delete-other.jsonl"
+    )
+    write_jsonl(
+        active_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T15:30:00Z",
+                "type": "session_meta",
+                "payload": {"id": "delete-active", "cwd": str(nested_cwd)},
+            },
+            {
+                "timestamp": "2026-05-03T15:31:00Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "user_message",
+                    "message": "Active delete candidate",
+                },
+            },
+        ],
+    )
+    write_jsonl(
+        archived_rollout,
+        [
+            {
+                "timestamp": "2026-05-02T15:30:00Z",
+                "type": "session_meta",
+                "payload": {"id": "delete-archived", "cwd": str(nested_cwd)},
+            }
+        ],
+    )
+    write_jsonl(
+        other_rollout,
+        [
+            {
+                "timestamp": "2026-05-01T15:30:00Z",
+                "type": "session_meta",
+                "payload": {"id": "delete-other", "cwd": str(other_project)},
+            }
+        ],
+    )
+
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    app_module = load_fastapi_main(monkeypatch)
+    client = TestClient(app_module.fastapi_app, base_url="http://127.0.0.1:8020")
+
+    initial_projects_response = client.get("/codex-sessions/projects/")
+    assert initial_projects_response.status_code == 200
+    initial_projects_body = initial_projects_response.json()
+    initial_projects_by_id = {
+        project["id"]: project for project in initial_projects_body["projects"]
+    }
+    assert initial_projects_by_id[str(project_root.resolve())]["sessionCount"] == 2
+    assert initial_projects_by_id[str(other_project.resolve())]["sessionCount"] == 1
+
+    delete_single_response = client.request(
+        "DELETE",
+        "/codex-sessions/sessions/",
+        json={"sessionIds": ["delete-active"]},
+    )
+    assert delete_single_response.status_code == 200
+    assert delete_single_response.json() == {
+        "deletedSessionIds": ["delete-active"]
+    }
+    assert not active_rollout.exists()
+
+    refreshed_sessions_response = client.get(
+        "/codex-sessions/sessions/",
+        params={"projectId": str(project_root.resolve())},
+    )
+    assert refreshed_sessions_response.status_code == 200
+    refreshed_sessions_body = refreshed_sessions_response.json()
+    assert [session["id"] for session in refreshed_sessions_body["sessions"]] == [
+        "delete-archived"
+    ]
+    assert refreshed_sessions_body["warnings"] == []
+
+    refreshed_projects_response = client.get("/codex-sessions/projects/")
+    assert refreshed_projects_response.status_code == 200
+    refreshed_projects_body = refreshed_projects_response.json()
+    refreshed_projects_by_id = {
+        project["id"]: project for project in refreshed_projects_body["projects"]
+    }
+    assert refreshed_projects_by_id[str(project_root.resolve())]["sessionCount"] == 1
+    assert refreshed_projects_by_id[str(other_project.resolve())]["sessionCount"] == 1
+
+    delete_batch_response = client.request(
+        "DELETE",
+        "/codex-sessions/sessions/",
+        json={"sessionIds": ["delete-archived", "delete-other"]},
+    )
+    assert delete_batch_response.status_code == 200
+    assert delete_batch_response.json() == {
+        "deletedSessionIds": ["delete-archived", "delete-other"]
+    }
+    assert not archived_rollout.exists()
+    assert not other_rollout.exists()
+
+    empty_projects_response = client.get("/codex-sessions/projects/")
+    assert empty_projects_response.status_code == 200
+    assert empty_projects_response.json()["projects"] == []
+
+
 def test_codex_session_api_reuses_scan_until_explicit_refresh(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -718,6 +957,18 @@ def test_codex_session_api_rejects_cross_site_origins(
     assert "local origin" in blocked_origin_response.json()["detail"]
     assert "access-control-allow-origin" not in blocked_origin_response.headers
 
+    blocked_delete_origin_response = client.request(
+        "DELETE",
+        "/codex-sessions/sessions/",
+        json={"sessionIds": ["blocked-session"]},
+        headers={
+            "Origin": "https://example.com",
+            "Host": "127.0.0.1:8020",
+        },
+    )
+    assert blocked_delete_origin_response.status_code == 403
+    assert "local origin" in blocked_delete_origin_response.json()["detail"]
+
     blocked_host_response = client.get(
         "/codex-sessions/projects/",
         headers={
@@ -727,6 +978,18 @@ def test_codex_session_api_rejects_cross_site_origins(
     )
     assert blocked_host_response.status_code == 403
     assert "local host" in blocked_host_response.json()["detail"]
+
+    blocked_delete_host_response = client.request(
+        "DELETE",
+        "/codex-sessions/sessions/",
+        json={"sessionIds": ["blocked-session"]},
+        headers={
+            "Origin": "http://localhost:3000",
+            "Host": "example.com",
+        },
+    )
+    assert blocked_delete_host_response.status_code == 403
+    assert "local host" in blocked_delete_host_response.json()["detail"]
 
     local_origin_response = client.get(
         "/codex-sessions/projects/",
@@ -740,6 +1003,20 @@ def test_codex_session_api_rejects_cross_site_origins(
         local_origin_response.headers["access-control-allow-origin"]
         == "http://localhost:3000"
     )
+
+    local_delete_origin_response = client.request(
+        "DELETE",
+        "/codex-sessions/sessions/",
+        json={"sessionIds": []},
+        headers={
+            "Origin": "http://localhost:3000",
+            "Host": "127.0.0.1:8020",
+        },
+    )
+    assert local_delete_origin_response.status_code == 400
+    assert "sessionIds must not be empty" in local_delete_origin_response.json()[
+        "detail"
+    ]
 
 
 def test_codex_session_api_does_not_regress_existing_routes(

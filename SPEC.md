@@ -2,7 +2,7 @@
 
 ## Objective
 
-为本地单人自用的 Euphony 增加一个只读 Codex sessions 浏览器，让使用者打开本地 Euphony 后可以自动读取本机 Codex CLI sessions，并按“项目 -> session 标题 -> session 内容”的维度浏览，不再需要手动上传 rollout JSONL 文件。
+为本地单人自用的 Euphony 增加一个 Codex sessions 浏览器，让使用者打开本地 Euphony 后可以自动读取本机 Codex CLI sessions，并按“项目 -> session 标题 -> session 内容”的维度浏览，不再需要手动上传 rollout JSONL 文件，同时可以单条或批量永久删除后端扫描到的 rollout JSONL 源文件。
 
 目标用户是本机使用 Euphony 查看自己 Codex 历史记录的开发者。第一版以真实本机 `CODEX_HOME` 数据可用为成功标准，不把该能力设计成多用户、远程托管或上游通用部署功能。
 
@@ -12,13 +12,15 @@
 - 作为本地用户，我可以按项目查看 sessions；项目由 session `cwd` 推导出的 Git 根目录决定，找不到 Git 根目录时回退到原始 `cwd`。
 - 作为本地用户，我可以在某个项目下看到 session 标题、预览、路径、更新时间和归档状态。
 - 作为本地用户，我点击一个 session 后，可以看到完整 Codex session 内容，渲染质量至少不低于当前手动上传 JSONL 的体验。
+- 作为本地用户，我可以从 session 详情区单条永久删除该 session 对应的 rollout JSONL 文件。
+- 作为本地用户，我可以在当前项目的 session 列表里勾选多个 session 并批量永久删除对应的 rollout JSONL 文件。
 - 作为本地用户，我可以手动刷新，让新产生的 sessions 出现在浏览器中。
 - 作为本地用户，我仍然可以通过现有入口加载 URL、剪贴板或本地文件，避免破坏原有工作流。
 
 ### Success Criteria
 
 - 启动本地 FastAPI 后端和 Vite 前端后，访问 `http://localhost:3000/` 默认进入本地 Codex sessions 浏览器。
-- 后端能扫描 active sessions 和 archived sessions，并返回至少包含项目列表、session 摘要和单个 session 完整内容的只读 API。
+- 后端能扫描 active sessions 和 archived sessions，并返回至少包含项目列表、session 摘要、单个 session 完整内容，以及永久删除入口的 API。
 - 使用真实本机 `~/.codex` 或 `CODEX_HOME` 数据验证：可以列出项目、列出项目内 sessions、打开至少一个 session 并渲染内容。
 - 归档 sessions 会出现在列表中，并带有明确的 archived 状态。
 - 前端不能让用户传任意本地路径给后端读取；session 内容只能来自后端扫描出的 Codex rollout 白名单。
@@ -189,7 +191,7 @@ Manual browser verification is required for this feature because it changes the 
 - Include both active and archived sessions in the local browser.
 - Group projects by Git root derived from session `cwd`, with fallback to exact `cwd`.
 - Use manual refresh for MVP; avoid polling or file watching.
-- Keep all APIs read-only.
+- Keep list/detail APIs read-only, and expose a dedicated delete endpoint that permanently removes rollout JSONL files from the backend whitelist.
 - Preserve existing URL, clipboard and local file loading workflows.
 - Run `uv run --with pytest pytest` and `pnpm run build` before committing implementation changes.
 - Keep generated `lib/` untouched.
@@ -198,7 +200,7 @@ Manual browser verification is required for this feature because it changes the 
 
 - Adding any new dependency.
 - Reading SQLite `state_5.sqlite` as a primary metadata source.
-- Adding write operations such as rename, archive, unarchive or delete.
+- Adding write operations such as rename, archive or unarchive. The session delete flow described above is in scope.
 - Changing the public web component API.
 - Changing CI, package manager configuration, build scripts or deployment scripts.
 - Changing the physical layout of `CODEX_HOME`.
@@ -206,7 +208,7 @@ Manual browser verification is required for this feature because it changes the 
 
 ### Never Do
 
-- Never modify, move, delete or rewrite Codex rollout files.
+- Never modify, move or rewrite Codex rollout files outside the explicit delete flow described above, and never rewrite `session_index.jsonl`.
 - Never allow frontend-supplied arbitrary local paths to be read by the backend.
 - Never expose this local file-reading API as a remote multi-user feature without a new security design.
 - Never store secrets, API keys or full session contents in browser localStorage.
