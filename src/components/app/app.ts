@@ -1,6 +1,13 @@
 import { downloadText } from '@xiaohk/utils';
 import { format } from 'd3-format';
-import { css, html, LitElement, PropertyValues, unsafeCSS } from 'lit';
+import {
+  css,
+  html,
+  LitElement,
+  PropertyValues,
+  unsafeCSS,
+  type TemplateResult
+} from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
@@ -1595,7 +1602,10 @@ export class EuphonyApp extends LitElement {
   }
 
   localCodexProjectClicked(projectId: string) {
-    if (projectId === this.selectedLocalCodexProjectId) {
+    if (
+      projectId === '' ||
+      projectId === this.selectedLocalCodexProjectId
+    ) {
       return;
     }
 
@@ -1622,6 +1632,9 @@ export class EuphonyApp extends LitElement {
     this.isLoadingLocalCodexSession = true;
     this.selectedLocalCodexSessionId = session.id;
     this.localCodexDetailErrorMessage = '';
+    this.clearRenderedData();
+    this.isLoadingFromCache = false;
+    this.isLoadingFromClipboard = false;
 
     const detailState = await loadLocalCodexSessionDetail(
       this.apiManager,
@@ -1654,28 +1667,22 @@ export class EuphonyApp extends LitElement {
     }
   }
 
-  renderLocalCodexBrowser() {
+  renderLocalCodexBrowser(conversationsTemplate: TemplateResult) {
     const selectedProject = this.localCodexProjects.find(
       project => project.id === this.selectedLocalCodexProjectId
     );
+    const selectedSession = this.localCodexSessions.find(
+      session => session.id === this.selectedLocalCodexSessionId
+    );
 
-    const projectButtons = this.localCodexProjects.map(
+    const projectOptions = this.localCodexProjects.map(
       project => html`
-        <button
-          class="local-codex-project-button"
-          ?is-selected=${project.id === this.selectedLocalCodexProjectId}
-          @click=${() => {
-            this.localCodexProjectClicked(project.id);
-          }}
+        <option
+          value=${project.id}
+          ?selected=${project.id === this.selectedLocalCodexProjectId}
         >
-          <span class="local-codex-project-name">${project.name}</span>
-          <span class="local-codex-project-path"
-            >${project.path ?? project.id}</span
-          >
-          <span class="local-codex-project-count"
-            >${NUM_FORMATTER(project.sessionCount)}</span
-          >
-        </button>
+          ${project.name} (${NUM_FORMATTER(project.sessionCount)})
+        </option>
       `
     );
 
@@ -1720,6 +1727,26 @@ export class EuphonyApp extends LitElement {
       warning => html`<li>${warning}</li>`
     );
 
+    const selectedSessionMeta = selectedSession
+      ? html`
+          <span class="local-codex-detail-meta">
+            ${selectedSession.archived
+              ? html`<span class="local-codex-archived">Archived</span>`
+              : ''}
+            <time
+              datetime=${ifDefined(
+                selectedSession.updatedAt ?? selectedSession.createdAt ?? undefined
+              )}
+              >${selectedSession.updatedAt ??
+              selectedSession.createdAt ??
+              'Unknown time'}</time
+            >
+          </span>
+        `
+      : html`
+          <span class="local-codex-detail-meta">No session selected</span>
+        `;
+
     let bodyTemplate = html``;
     if (this.localCodexErrorMessage !== '') {
       bodyTemplate = html`
@@ -1734,52 +1761,98 @@ export class EuphonyApp extends LitElement {
         </div>
       `;
     } else {
-      bodyTemplate = html`
-        <div class="local-codex-browser-grid">
-          <section class="local-codex-projects" aria-label="Codex projects">
-            ${projectButtons}
-          </section>
-          <section class="local-codex-sessions" aria-label="Codex sessions">
-            <div class="local-codex-section-header">
-              <div>
-                <h2>${selectedProject?.name ?? 'Sessions'}</h2>
-                <p>${selectedProject?.path ?? selectedProject?.id ?? ''}</p>
+      const detailContentTemplate =
+        this.localCodexDetailErrorMessage !== ''
+          ? html`
+              <div class="local-codex-detail-error" role="alert">
+                ${this.localCodexDetailErrorMessage}
               </div>
-              <span
-                >${NUM_FORMATTER(this.localCodexSessions.length)} sessions</span
-              >
-            </div>
-            ${this.localCodexSessionsErrorMessage !== ''
+            `
+          : this.isLoadingLocalCodexSession
+            ? html`
+                <div class="local-codex-detail-status" role="status">
+                  Loading selected session.
+                </div>
+              `
+            : this.codexSessionData.length > 0
               ? html`
-                  <div class="local-codex-detail-error" role="alert">
-                    ${this.localCodexSessionsErrorMessage}
+                  <div class="local-codex-rendered-session">
+                    <div class="conversation-list" ?is-grid-view=${this.isGridView}>
+                      ${conversationsTemplate}
+                    </div>
                   </div>
                 `
-              : this.localCodexSessions.length === 0
+              : html`
+                  <div class="local-codex-detail-empty" role="status">
+                    Select a session to view its Codex rollout.
+                  </div>
+                `;
+
+      bodyTemplate = html`
+        <div class="local-codex-master-detail">
+          <section class="local-codex-master" aria-label="Codex projects and sessions">
+            <div class="local-codex-project-picker">
+              <label for="local-codex-project-select">Project</label>
+              <div class="local-codex-project-select-wrapper">
+                <select
+                  id="local-codex-project-select"
+                  .value=${this.selectedLocalCodexProjectId ?? ''}
+                  ?disabled=${this.isLoadingData}
+                  @change=${(e: Event) => {
+                    const target = e.target as HTMLSelectElement;
+                    this.localCodexProjectClicked(target.value);
+                  }}
+                >
+                  ${projectOptions}
+                </select>
+              </div>
+              <p class="local-codex-project-summary">
+                ${selectedProject?.path ?? selectedProject?.id ?? 'Select a project'}
+              </p>
+            </div>
+
+            <div class="local-codex-session-section">
+              <div class="local-codex-section-header">
+                <div>
+                  <h2>Sessions</h2>
+                  <p>${selectedProject?.name ?? 'Select a project'}</p>
+                </div>
+                <span
+                  >${NUM_FORMATTER(this.localCodexSessions.length)} sessions</span
+                >
+              </div>
+              ${this.localCodexSessionsErrorMessage !== ''
                 ? html`
-                    <div class="local-codex-state-message" role="status">
-                      ${this.isLoadingLocalCodexSessions
-                        ? 'Loading sessions for this project.'
-                        : 'No sessions found for this project.'}
+                    <div class="local-codex-detail-error" role="alert">
+                      ${this.localCodexSessionsErrorMessage}
                     </div>
                   `
-                : html`<ul class="local-codex-session-list">
-                    ${sessionRows}
-                  </ul>`}
-            ${this.isLoadingLocalCodexSession
-              ? html`
-                  <div class="local-codex-detail-status" role="status">
-                    Loading selected session.
-                  </div>
-                `
-              : ''}
-            ${this.localCodexDetailErrorMessage !== ''
-              ? html`
-                  <div class="local-codex-detail-error" role="alert">
-                    ${this.localCodexDetailErrorMessage}
-                  </div>
-                `
-              : ''}
+                : this.localCodexSessions.length === 0
+                  ? html`
+                      <div class="local-codex-state-message" role="status">
+                        ${this.isLoadingLocalCodexSessions
+                          ? 'Loading sessions for this project.'
+                          : 'No sessions found for this project.'}
+                      </div>
+                    `
+                  : html`<ul class="local-codex-session-list">
+                      ${sessionRows}
+                    </ul>`}
+            </div>
+          </section>
+
+          <section class="local-codex-detail" aria-label="Codex session detail">
+            <div class="local-codex-detail-header">
+              <div>
+                <h2>${selectedSession?.title ?? 'Session detail'}</h2>
+                <p>
+                  ${selectedSession?.preview ??
+                  'Select a session to view its Codex rollout.'}
+                </p>
+              </div>
+              ${selectedSessionMeta}
+            </div>
+            ${detailContentTemplate}
           </section>
         </div>
       `;
@@ -2560,19 +2633,8 @@ export class EuphonyApp extends LitElement {
         </div> `;
     }
 
-    const localCodexDetailTemplate =
-      this.isLocalCodexBrowserMode && this.codexSessionData.length > 0
-        ? html`
-            <div class="local-codex-rendered-session">
-              <div class="conversation-list" ?is-grid-view=${this.isGridView}>
-                ${conversationsTemplate}
-              </div>
-            </div>
-          `
-        : html``;
-
     const contentCenterTemplate = this.isLocalCodexBrowserMode
-      ? html`${this.renderLocalCodexBrowser()} ${localCodexDetailTemplate}`
+      ? html`${this.renderLocalCodexBrowser(conversationsTemplate)}`
       : html`
           <div
             class="grid-header"
