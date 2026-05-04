@@ -123,8 +123,7 @@ The current backend includes a remote URL fetch path for loading JSON and JSONL 
 PowerShell 一键启动：
 
 ```powershell
-$env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
-& 'D:\IdeaProjects\euphony\scripts\start-local.ps1'
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy
 ```
 
 这个脚本可以从任意当前目录运行，会同时启动本地 FastAPI 后端和 Vite 前端，等待服务就绪后自动打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)。按 `Ctrl+C` 会同时停止前后端；如果终端被直接关闭，可以再次运行：
@@ -133,17 +132,36 @@ $env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
 & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -Stop
 ```
 
-如果本机设置了 SOCKS 代理并看到 `socksio` 相关错误，可以使用：
+如果你希望在任意目录下少敲几个字符，可以把下面的函数加入 PowerShell profile：
 
 ```powershell
-& 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy
+if (-not (Test-Path -LiteralPath $PROFILE)) {
+  New-Item -ItemType File -Path $PROFILE -Force | Out-Null
+}
+
+Add-Content -LiteralPath $PROFILE -Value @'
+function eu {
+  & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy
+}
+
+function eustop {
+  & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -Stop
+}
+'@
+```
+
+重新打开 PowerShell 后，运行 `eu` 启动本地服务，运行 `eustop` 停止残留服务。
+
+本地 Codex sessions 浏览器不需要 `OPEN_AI_API_KEY`。只有使用后端翻译接口时才需要 OpenAI API key，可以在启动时传入：
+
+```powershell
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy -OpenAiApiKey 'your-local-openai-api-key'
 ```
 
 手动启动后端：
 
 ```powershell
 uv sync
-$env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
 uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
 ```
 
@@ -154,7 +172,7 @@ $env:VITE_EUPHONY_FRONTEND_ONLY = 'false'
 pnpm run dev
 ```
 
-后端导入时会初始化 OpenAI 客户端，因此即使只浏览本地 Codex sessions，也需要设置 `OPEN_AI_API_KEY`。如果本机设置了 SOCKS 代理并看到 `socksio` 相关错误，请在启动后端的终端里临时清理 `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` 等代理环境变量，或安装支持 SOCKS 的 `httpx` 运行环境。
+如果本机设置了 SOCKS 代理并看到 `socksio` 相关错误，请在启动后端的终端里临时清理 `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` 等代理环境变量，或安装支持 SOCKS 的 `httpx` 运行环境。
 
 访问 [http://localhost:3000/](http://localhost:3000/) 后，应用默认显示本地 Codex sessions 浏览器。URL、剪贴板和本地 `.json` / `.jsonl` 文件加载入口仍然保留。
 

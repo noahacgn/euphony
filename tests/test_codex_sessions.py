@@ -21,8 +21,17 @@ from codex_sessions import (  # noqa: E402
 )
 
 
-def load_fastapi_main(monkeypatch: pytest.MonkeyPatch) -> Any:
-    monkeypatch.setenv("OPEN_AI_API_KEY", "test-api-key")
+def load_fastapi_main(
+    monkeypatch: pytest.MonkeyPatch,
+    openai_api_key: str | None = "test-api-key",
+    clear_proxy_vars: bool = True,
+) -> Any:
+    if openai_api_key is None:
+        monkeypatch.delenv("OPEN_AI_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("OPEN_AI_API_KEY", openai_api_key)
+    if not clear_proxy_vars:
+        return import_fastapi_main()
     for proxy_var in [
         "ALL_PROXY",
         "HTTPS_PROXY",
@@ -34,6 +43,10 @@ def load_fastapi_main(monkeypatch: pytest.MonkeyPatch) -> Any:
         "no_proxy",
     ]:
         monkeypatch.delenv(proxy_var, raising=False)
+    return import_fastapi_main()
+
+
+def import_fastapi_main() -> Any:
     module_name = "fastapi_main_under_test"
     sys.modules.pop(module_name, None)
     spec = importlib.util.spec_from_file_location(
@@ -716,6 +729,49 @@ def test_codex_session_api_lists_projects_sessions_and_detail(
     detail_response = client.get("/codex-sessions/sessions/api-active/")
     assert detail_response.status_code == 200
     assert detail_response.json() == active_events
+
+
+def test_codex_session_api_starts_without_openai_api_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    (project_root / ".git").mkdir(parents=True)
+    write_jsonl(
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T18-00-00-no-openai-key.jsonl",
+        [
+            {
+                "timestamp": "2026-05-03T18:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "no-openai-key", "cwd": str(project_root)},
+            }
+        ],
+    )
+
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("ALL_PROXY", "socks5://127.0.0.1:9")
+    app_module = load_fastapi_main(
+        monkeypatch,
+        openai_api_key=None,
+        clear_proxy_vars=False,
+    )
+    client = TestClient(app_module.fastapi_app, base_url="http://127.0.0.1:8020")
+
+    projects_response = client.get("/codex-sessions/projects/")
+    assert projects_response.status_code == 200
+    assert projects_response.json()["projects"][0]["id"] == str(
+        project_root.resolve()
+    )
+
+    translate_response = client.post("/translate/", json={"source": "你好"})
+    assert translate_response.status_code == 500
+    assert "OPEN_AI_API_KEY" in translate_response.json()["detail"]
 
 
 def test_codex_session_api_deletes_single_and_batch_sessions_and_refreshes_cache(

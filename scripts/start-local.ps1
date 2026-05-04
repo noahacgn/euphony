@@ -8,7 +8,7 @@
 按 Ctrl+C 会停止本次脚本启动的前后端；如果终端被直接关闭，可以再次运行脚本并传入 -Stop。
 
 .EXAMPLE
-& 'D:\IdeaProjects\euphony\scripts\start-local.ps1'
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy
 
 .EXAMPLE
 & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -Stop
@@ -293,10 +293,6 @@ if ($Stop) {
   return
 }
 
-if ([string]::IsNullOrWhiteSpace($OpenAiApiKey)) {
-  throw "请先设置 OPEN_AI_API_KEY，或用 -OpenAiApiKey 传入本地后端使用的 OpenAI API key。"
-}
-
 Assert-NoRecordedService
 Assert-RequiredCommand -Name 'uv'
 Assert-RequiredCommand -Name 'pnpm'
@@ -314,14 +310,21 @@ if (-not $SkipInstall) {
 }
 
 $rootLiteral = ConvertTo-PowerShellLiteral -Value $ProjectRoot
-$apiKeyLiteral = ConvertTo-PowerShellLiteral -Value $OpenAiApiKey
+$backendCommandLines = New-Object System.Collections.Generic.List[string]
+$backendCommandLines.Add("`$ErrorActionPreference = 'Stop'") | Out-Null
+$backendCommandLines.Add("Set-Location -LiteralPath $rootLiteral") | Out-Null
 
-$backendCommand = @"
-`$ErrorActionPreference = 'Stop'
-Set-Location -LiteralPath $rootLiteral
-`$env:OPEN_AI_API_KEY = $apiKeyLiteral
-uv run uvicorn fastapi-main:app --app-dir server --host $HostAddress --port $BackendPort --reload
-"@
+if ([string]::IsNullOrWhiteSpace($OpenAiApiKey)) {
+  Write-Step '未设置 OPEN_AI_API_KEY；本地 Codex sessions 浏览可用，后端翻译接口会返回配置错误。'
+} else {
+  $apiKeyLiteral = ConvertTo-PowerShellLiteral -Value $OpenAiApiKey
+  $backendCommandLines.Add("`$env:OPEN_AI_API_KEY = $apiKeyLiteral") | Out-Null
+}
+
+$backendCommandLines.Add(
+  "uv run uvicorn fastapi-main:app --app-dir server --host $HostAddress --port $BackendPort --reload"
+) | Out-Null
+$backendCommand = $backendCommandLines -join "`r`n"
 
 if ($ClearProxy) {
   # OpenAI Python 客户端会读取代理环境变量；无 socksio 时清理 SOCKS 代理可避免导入失败。
