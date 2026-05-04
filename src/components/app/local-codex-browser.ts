@@ -45,9 +45,35 @@ export interface LocalCodexSessionDetailState {
   errorMessage: string;
 }
 
+const LOCAL_CODEX_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
+
 const mergeWarnings = (...warningGroups: string[][]): string[] => [
   ...new Set(warningGroups.flat())
 ];
+
+// 让 sessions 页面直接跟随浏览器当前时区显示，避免把 UTC 字符串原样暴露给用户。
+export const formatLocalCodexTimestamp = (
+  timestamp: string | null | undefined
+): string => {
+  if (!timestamp) {
+    return 'Unknown time';
+  }
+
+  const parsedTimestamp = Date.parse(timestamp);
+  if (Number.isNaN(parsedTimestamp)) {
+    return 'Unknown time';
+  }
+
+  return LOCAL_CODEX_TIMESTAMP_FORMATTER.format(new Date(parsedTimestamp));
+};
 
 const buildLocalCodexErrorMessage = (error: unknown): string => {
   const errorText = error instanceof Error ? error.message : String(error);

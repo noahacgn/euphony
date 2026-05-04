@@ -33,6 +33,24 @@ async function loadLocalCodexBrowserModule() {
   }
 }
 
+test('formatLocalCodexTimestamp formats timestamps in the browser timezone', async () => {
+  const { formatLocalCodexTimestamp } = await loadLocalCodexBrowserModule();
+  const timestamp = '2026-05-03T10:00:00Z';
+  const expected = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(new Date(timestamp));
+
+  assert.equal(formatLocalCodexTimestamp(timestamp), expected);
+  assert.equal(formatLocalCodexTimestamp(null), 'Unknown time');
+  assert.equal(formatLocalCodexTimestamp('not-a-date'), 'Unknown time');
+});
+
 test('loadLocalCodexBrowserState selects the first project and loads only summaries', async () => {
   const { loadLocalCodexBrowserState } = await loadLocalCodexBrowserModule();
   const calls = [];

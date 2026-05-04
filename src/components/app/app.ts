@@ -46,7 +46,8 @@ import LocalDataWorkerInline from './local-data-worker?worker';
 import {
   loadLocalCodexBrowserState,
   loadLocalCodexProjectSessionsState,
-  loadLocalCodexSessionDetail
+  loadLocalCodexSessionDetail,
+  formatLocalCodexTimestamp
 } from './local-codex-browser';
 import { RequestWorker } from './request-worker';
 import { URLManager } from './url-manager';
@@ -1831,8 +1832,9 @@ export class EuphonyApp extends LitElement {
       `
     );
 
-    const sessionRows = this.localCodexSessions.map(
-      session => html`
+    const sessionRows = this.localCodexSessions.map(session => {
+      const sessionTimestamp = session.updatedAt ?? session.createdAt ?? null;
+      return html`
         <li class="local-codex-session-row">
           <input
             class="local-codex-session-checkbox"
@@ -1869,23 +1871,22 @@ export class EuphonyApp extends LitElement {
                 ? html`<span class="local-codex-archived">Archived</span>`
                 : ''}
               <time
-                datetime=${ifDefined(
-                  session.updatedAt ?? session.createdAt ?? undefined
-                )}
-                >${session.updatedAt ??
-                session.createdAt ??
-                'Unknown time'}</time
+                datetime=${ifDefined(sessionTimestamp ?? undefined)}
+                >${formatLocalCodexTimestamp(sessionTimestamp)}</time
               >
             </span>
           </button>
         </li>
-      `
-    );
+      `;
+    });
 
     const warningRows = this.localCodexWarnings.map(
       warning => html`<li>${warning}</li>`
     );
 
+    const selectedSessionTimestamp = selectedSession
+      ? selectedSession.updatedAt ?? selectedSession.createdAt ?? null
+      : null;
     const selectedSessionMeta = selectedSession
       ? html`
           <span class="local-codex-detail-meta">
@@ -1893,12 +1894,8 @@ export class EuphonyApp extends LitElement {
               ? html`<span class="local-codex-archived">Archived</span>`
               : ''}
             <time
-              datetime=${ifDefined(
-                  selectedSession.updatedAt ?? selectedSession.createdAt ?? undefined
-                )}
-              >${selectedSession.updatedAt ??
-              selectedSession.createdAt ??
-              'Unknown time'}</time
+              datetime=${ifDefined(selectedSessionTimestamp ?? undefined)}
+              >${formatLocalCodexTimestamp(selectedSessionTimestamp)}</time
             >
             <button
               class="button local-codex-detail-delete-button"
