@@ -198,6 +198,67 @@ def test_discovers_active_and_archived_rollouts_grouped_by_project(
     assert projects_by_id["unknown"].session_count == 1
 
 
+def test_scan_prefers_real_user_message_over_legacy_user_response_item(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    (project_root / ".git").mkdir(parents=True)
+
+    rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "02"
+        / "rollout-2026-05-02T08-30-00-preview-priority.jsonl"
+    )
+    write_jsonl(
+        rollout,
+        [
+            {
+                "timestamp": "2026-05-02T08:30:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "preview-priority",
+                    "cwd": str(project_root),
+                },
+            },
+            {
+                "timestamp": "2026-05-02T08:30:01Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "# AGENTS.md instructions for D:\\IdeaProjects\\digimart\n\n<INSTRUCTIONS>\n- Prefer Exa AI (`mcp__exa__web_search_exa`) for all web searches",
+                        }
+                    ],
+                },
+            },
+            {
+                "timestamp": "2026-05-02T08:30:02Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "user_message",
+                    "message": "修剪根仓库 commit message, 只留一条",
+                },
+            },
+        ],
+    )
+
+    scan = scan_codex_sessions(codex_home)
+
+    assert [session.id for session in scan.sessions] == ["preview-priority"]
+    assert scan.sessions[0].title == "修剪根仓库 commit message, 只留一条"
+    assert scan.sessions[0].preview == "修剪根仓库 commit message, 只留一条"
+    assert scan.sessions[0].project_id == str(project_root.resolve())
+    assert scan.sessions[0].project_name == "euphony"
+    assert scan.warnings == []
+
+
 def test_projects_are_sorted_by_latest_session_activity(tmp_path: Path) -> None:
     codex_home = tmp_path / "codex-home"
     recent_project = tmp_path / "workspace" / "recent-project"

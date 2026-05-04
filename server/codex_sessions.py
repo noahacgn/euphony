@@ -325,7 +325,8 @@ def _build_session_summary(
 
 def _scan_rollout_summary(path: Path) -> _RolloutSummaryFields:
     session_meta: dict[str, Any] = {}
-    preview = ""
+    preferred_preview = ""
+    legacy_preview = ""
     first_timestamp: str | None = None
     last_timestamp: str | None = None
 
@@ -339,6 +340,7 @@ def _scan_rollout_summary(path: Path) -> _RolloutSummaryFields:
                     parsed = json.loads(stripped_line)
                 except json.JSONDecodeError as exc:
                     warning = _jsonl_parse_error(path, line_number, exc)
+                    preview = preferred_preview or legacy_preview
                     if first_timestamp is None and not session_meta and preview == "":
                         raise RolloutParseError(warning) from exc
                     return _RolloutSummaryFields(
@@ -362,14 +364,16 @@ def _scan_rollout_summary(path: Path) -> _RolloutSummaryFields:
                     if not session_meta and isinstance(payload, dict):
                         session_meta = payload
 
-                if preview == "":
-                    preview = _extract_preview_from_event(parsed)
+                if preferred_preview == "":
+                    preferred_preview = _extract_user_message_preview(parsed)
+                if legacy_preview == "":
+                    legacy_preview = _extract_legacy_user_preview(parsed)
     except OSError as exc:
         raise RolloutParseError(f"Failed to read Codex rollout {path}: {exc}.") from exc
 
     return _RolloutSummaryFields(
         session_meta=session_meta,
-        preview=preview,
+        preview=preferred_preview or legacy_preview,
         first_timestamp=first_timestamp,
         last_timestamp=last_timestamp,
     )
@@ -443,7 +447,7 @@ def _find_git_root(cwd: Path) -> Path | None:
     return None
 
 
-def _extract_preview_from_event(event: dict[str, Any]) -> str:
+def _extract_user_message_preview(event: dict[str, Any]) -> str:
     event_type = event.get("type")
     payload = event.get("payload")
     if not isinstance(payload, dict):
@@ -451,6 +455,15 @@ def _extract_preview_from_event(event: dict[str, Any]) -> str:
 
     if event_type == "event_msg" and payload.get("type") == "user_message":
         return _text_from_value(payload.get("message"))
+
+    return ""
+
+
+def _extract_legacy_user_preview(event: dict[str, Any]) -> str:
+    event_type = event.get("type")
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return ""
 
     if (
         event_type == "response_item"
