@@ -45,6 +45,13 @@ export interface LocalCodexSessionDetailState {
   errorMessage: string;
 }
 
+export interface LocalCodexSessionTreeItem {
+  session: CodexSessionSummary;
+  children: CodexSessionSummary[];
+  isOrphanSubagent: boolean;
+  sortTimestamp: string | null;
+}
+
 const LOCAL_CODEX_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
   month: '2-digit',
@@ -58,6 +65,127 @@ const LOCAL_CODEX_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat(undefined, {
 const mergeWarnings = (...warningGroups: string[][]): string[] => [
   ...new Set(warningGroups.flat())
 ];
+
+export const isLocalCodexSubagentSession = (
+  session: CodexSessionSummary
+): boolean => session.threadSource === 'subagent';
+
+export const getLocalCodexSessionActivityTimestamp = (
+  session: CodexSessionSummary
+): string | null => session.updatedAt ?? session.createdAt ?? null;
+
+const compareLocalCodexTimestampDesc = (
+  left: string | null,
+  right: string | null
+): number => {
+  if (left === right) {
+    return 0;
+  }
+  if (left === null) {
+    return 1;
+  }
+  if (right === null) {
+    return -1;
+  }
+  return right.localeCompare(left);
+};
+
+export const buildLocalCodexSessionTree = (
+  sessions: CodexSessionSummary[]
+): LocalCodexSessionTreeItem[] => {
+  const sessionsById = new Map(sessions.map(session => [session.id, session]));
+  const childrenByParentId = new Map<string, CodexSessionSummary[]>();
+  const topLevelSessions: CodexSessionSummary[] = [];
+
+  for (const session of sessions) {
+    const parentSessionId = session.parentSessionId;
+    const hasKnownParent =
+      parentSessionId !== null &&
+      parentSessionId !== session.id &&
+      sessionsById.has(parentSessionId);
+
+    if (isLocalCodexSubagentSession(session) && hasKnownParent) {
+      const parentChildren = childrenByParentId.get(parentSessionId) ?? [];
+      parentChildren.push(session);
+      childrenByParentId.set(parentSessionId, parentChildren);
+      continue;
+    }
+
+    topLevelSessions.push(session);
+  }
+
+  const treeItems = topLevelSessions.map(session => {
+    const children = childrenByParentId.get(session.id) ?? [];
+    children.sort((left, right) => {
+      const timestampComparison = compareLocalCodexTimestampDesc(
+        getLocalCodexSessionActivityTimestamp(left),
+        getLocalCodexSessionActivityTimestamp(right)
+      );
+      return timestampComparison !== 0
+        ? timestampComparison
+        : left.id.localeCompare(right.id);
+    });
+
+    const childSortTimestamp =
+      children
+        .map(getLocalCodexSessionActivityTimestamp)
+        .filter((timestamp): timestamp is string => timestamp !== null)
+        .sort()
+        .at(-1) ?? null;
+    const ownSortTimestamp = getLocalCodexSessionActivityTimestamp(session);
+    const sortTimestamp =
+      compareLocalCodexTimestampDesc(ownSortTimestamp, childSortTimestamp) <= 0
+        ? ownSortTimestamp
+        : childSortTimestamp;
+
+    return {
+      session,
+      children,
+      isOrphanSubagent:
+        isLocalCodexSubagentSession(session) &&
+        (session.parentSessionId === null ||
+          session.parentSessionId === session.id ||
+          !sessionsById.has(session.parentSessionId)),
+      sortTimestamp
+    };
+  });
+
+  treeItems.sort((left, right) => {
+    const timestampComparison = compareLocalCodexTimestampDesc(
+      left.sortTimestamp,
+      right.sortTimestamp
+    );
+    return timestampComparison !== 0
+      ? timestampComparison
+      : left.session.id.localeCompare(right.session.id);
+  });
+
+  return treeItems;
+};
+
+export const getVisibleLocalCodexSessionIds = (
+  treeItems: LocalCodexSessionTreeItem[],
+  expandedParentSessionIds: Set<string>
+): string[] =>
+  treeItems.flatMap(item => [
+    item.session.id,
+    ...(expandedParentSessionIds.has(item.session.id)
+      ? item.children.map(child => child.id)
+      : [])
+  ]);
+
+export const filterVisibleLocalCodexSessionSelection = (
+  selectedSessionIds: Set<string>,
+  treeItems: LocalCodexSessionTreeItem[],
+  expandedParentSessionIds: Set<string>
+): Set<string> => {
+  const visibleSessionIds = new Set(
+    getVisibleLocalCodexSessionIds(treeItems, expandedParentSessionIds)
+  );
+  return new Set(
+    [...selectedSessionIds].filter(sessionId => visibleSessionIds.has(sessionId))
+  );
+};
 
 // 让 sessions 页面直接跟随浏览器当前时区显示，避免把 UTC 字符串原样暴露给用户。
 export const formatLocalCodexTimestamp = (

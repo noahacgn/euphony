@@ -241,6 +241,201 @@ test('loadLocalCodexBrowserState keeps the requested session when refresh still 
   assert.equal(state.selectedSessionId, 'session-2');
 });
 
+test('buildLocalCodexSessionTree groups subagents under their direct parent', async () => {
+  const {
+    buildLocalCodexSessionTree,
+    getVisibleLocalCodexSessionIds
+  } = await loadLocalCodexBrowserModule();
+  const sessions = [
+    {
+      id: 'parent-session',
+      title: 'Parent session',
+      preview: 'Parent preview',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'rollout-parent.jsonl',
+      createdAt: '2026-05-03T10:00:00Z',
+      updatedAt: '2026-05-03T10:01:00Z',
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    },
+    {
+      id: 'child-session',
+      title: 'Child session',
+      preview: 'Child preview',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'rollout-child.jsonl',
+      createdAt: '2026-05-03T10:02:00Z',
+      updatedAt: '2026-05-03T10:03:00Z',
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'parent-session',
+      agentNickname: 'Carson'
+    }
+  ];
+
+  const tree = buildLocalCodexSessionTree(sessions);
+
+  assert.equal(tree.length, 1);
+  assert.equal(tree[0].session.id, 'parent-session');
+  assert.equal(tree[0].children.length, 1);
+  assert.equal(tree[0].children[0].id, 'child-session');
+  assert.equal(tree[0].isOrphanSubagent, false);
+  assert.deepEqual(getVisibleLocalCodexSessionIds(tree, new Set()), [
+    'parent-session'
+  ]);
+  assert.deepEqual(
+    getVisibleLocalCodexSessionIds(tree, new Set(['parent-session'])),
+    ['parent-session', 'child-session']
+  );
+});
+
+test('buildLocalCodexSessionTree sorts parent groups by child activity', async () => {
+  const { buildLocalCodexSessionTree } = await loadLocalCodexBrowserModule();
+  const sessions = [
+    {
+      id: 'older-parent',
+      title: 'Older parent',
+      preview: '',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'older-parent.jsonl',
+      createdAt: '2026-05-03T10:00:00Z',
+      updatedAt: '2026-05-03T10:00:00Z',
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    },
+    {
+      id: 'recent-child',
+      title: 'Recent child',
+      preview: '',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'recent-child.jsonl',
+      createdAt: '2026-05-03T11:00:00Z',
+      updatedAt: '2026-05-03T11:00:00Z',
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'older-parent',
+      agentNickname: 'Carson'
+    },
+    {
+      id: 'middle-parent',
+      title: 'Middle parent',
+      preview: '',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'middle-parent.jsonl',
+      createdAt: '2026-05-03T10:30:00Z',
+      updatedAt: '2026-05-03T10:30:00Z',
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    }
+  ];
+
+  const tree = buildLocalCodexSessionTree(sessions);
+
+  assert.deepEqual(
+    tree.map(item => item.session.id),
+    ['older-parent', 'middle-parent']
+  );
+});
+
+test('buildLocalCodexSessionTree keeps orphan subagents as top-level rows', async () => {
+  const { buildLocalCodexSessionTree } = await loadLocalCodexBrowserModule();
+  const sessions = [
+    {
+      id: 'orphan-child',
+      title: 'Orphan child',
+      preview: '',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'orphan-child.jsonl',
+      createdAt: '2026-05-03T10:00:00Z',
+      updatedAt: '2026-05-03T10:00:00Z',
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'missing-parent',
+      agentNickname: 'Carson'
+    }
+  ];
+
+  const tree = buildLocalCodexSessionTree(sessions);
+
+  assert.equal(tree.length, 1);
+  assert.equal(tree[0].session.id, 'orphan-child');
+  assert.equal(tree[0].isOrphanSubagent, true);
+});
+
+test('filterVisibleLocalCodexSessionSelection drops hidden collapsed child rows', async () => {
+  const {
+    buildLocalCodexSessionTree,
+    filterVisibleLocalCodexSessionSelection
+  } = await loadLocalCodexBrowserModule();
+  const sessions = [
+    {
+      id: 'parent-session',
+      title: 'Parent session',
+      preview: '',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'parent.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    },
+    {
+      id: 'child-session',
+      title: 'Child session',
+      preview: '',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'child.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'parent-session',
+      agentNickname: 'Carson'
+    }
+  ];
+  const tree = buildLocalCodexSessionTree(sessions);
+  const selected = new Set(['parent-session', 'child-session']);
+
+  assert.deepEqual(
+    [...filterVisibleLocalCodexSessionSelection(selected, tree, new Set())],
+    ['parent-session']
+  );
+  assert.deepEqual(
+    [
+      ...filterVisibleLocalCodexSessionSelection(
+        selected,
+        tree,
+        new Set(['parent-session'])
+      )
+    ],
+    ['parent-session', 'child-session']
+  );
+});
+
 test('loadLocalCodexBrowserState clears the requested session when refresh no longer returns it', async () => {
   const { loadLocalCodexBrowserState } = await loadLocalCodexBrowserModule();
   const api = {

@@ -233,6 +233,9 @@ export interface CodexSessionSummary {
   createdAt: string | null;
   updatedAt: string | null;
   archived: boolean;
+  threadSource: string | null;
+  parentSessionId: string | null;
+  agentNickname: string | null;
 }
 
 export interface CodexSessionsResponse {

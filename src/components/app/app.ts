@@ -44,10 +44,15 @@ import { EuphonyTokenWindow } from '../token-window/token-window';
 import type { LocalDataWorkerMessage } from './local-data-worker';
 import LocalDataWorkerInline from './local-data-worker?worker';
 import {
+  buildLocalCodexSessionTree,
+  filterVisibleLocalCodexSessionSelection,
+  getVisibleLocalCodexSessionIds,
+  isLocalCodexSubagentSession,
   loadLocalCodexBrowserState,
   loadLocalCodexProjectSessionsState,
   loadLocalCodexSessionDetail,
-  formatLocalCodexTimestamp
+  formatLocalCodexTimestamp,
+  type LocalCodexSessionTreeItem
 } from './local-codex-browser';
 import { RequestWorker } from './request-worker';
 import { URLManager } from './url-manager';
@@ -63,6 +68,7 @@ import iconCode from '../../images/icon-code-comment.svg?raw';
 import iconClose from '../../images/icon-cross.svg?raw';
 import iconEdit from '../../images/icon-edit.svg?raw';
 import iconFilter from '../../images/icon-filter.svg?raw';
+import iconChevronUpSm from '../../images/icon-chevron-up-sm.svg?raw';
 import iconInfoSmall from '../../images/icon-info-circle-small.svg?raw';
 import iconLaptop from '../../images/icon-macbook.svg?raw';
 import iconSetting from '../../images/icon-settings.svg?raw';
@@ -169,6 +175,9 @@ export class EuphonyApp extends LitElement {
 
   @state()
   selectedLocalCodexSessionIDs = new Set<string>();
+
+  @state()
+  expandedLocalCodexParentSessionIDs = new Set<string>();
 
   @state()
   selectedLocalCodexProjectId: string | null = null;
@@ -571,13 +580,11 @@ export class EuphonyApp extends LitElement {
   }
 
   syncSelectedLocalCodexSessionIDs() {
-    const visibleSessionIds = new Set(
-      this.localCodexSessions.map(session => session.id)
-    );
-    this.selectedLocalCodexSessionIDs = new Set(
-      [...this.selectedLocalCodexSessionIDs].filter(sessionId =>
-        visibleSessionIds.has(sessionId)
-      )
+    const sessionTree = buildLocalCodexSessionTree(this.localCodexSessions);
+    this.selectedLocalCodexSessionIDs = filterVisibleLocalCodexSessionSelection(
+      this.selectedLocalCodexSessionIDs,
+      sessionTree,
+      this.expandedLocalCodexParentSessionIDs
     );
   }
 
@@ -595,20 +602,49 @@ export class EuphonyApp extends LitElement {
   }
 
   toggleSelectAllLocalCodexSessions(): void {
-    if (this.localCodexSessions.length === 0) {
+    const visibleSessionIds = getVisibleLocalCodexSessionIds(
+      buildLocalCodexSessionTree(this.localCodexSessions),
+      this.expandedLocalCodexParentSessionIDs
+    );
+    if (visibleSessionIds.length === 0) {
       return;
     }
 
-    if (
-      this.selectedLocalCodexSessionIDs.size === this.localCodexSessions.length
-    ) {
+    const visibleSessionIdSet = new Set(visibleSessionIds);
+    const selectedVisibleSessionCount = [
+      ...this.selectedLocalCodexSessionIDs
+    ].filter(sessionId => visibleSessionIdSet.has(sessionId)).length;
+
+    if (selectedVisibleSessionCount === visibleSessionIds.length) {
       this.selectedLocalCodexSessionIDs = new Set();
       return;
     }
 
-    this.selectedLocalCodexSessionIDs = new Set(
-      this.localCodexSessions.map(session => session.id)
+    this.selectedLocalCodexSessionIDs = new Set(visibleSessionIds);
+  }
+
+  toggleLocalCodexParentSessionExpansion(
+    parentSessionId: string,
+    childSessionIds: string[]
+  ): void {
+    const nextExpandedSessionIDs = new Set(
+      this.expandedLocalCodexParentSessionIDs
     );
+    const shouldCollapse = nextExpandedSessionIDs.has(parentSessionId);
+
+    if (shouldCollapse) {
+      nextExpandedSessionIDs.delete(parentSessionId);
+      const childSessionIdSet = new Set(childSessionIds);
+      this.selectedLocalCodexSessionIDs = new Set(
+        [...this.selectedLocalCodexSessionIDs].filter(
+          sessionId => !childSessionIdSet.has(sessionId)
+        )
+      );
+    } else {
+      nextExpandedSessionIDs.add(parentSessionId);
+    }
+
+    this.expandedLocalCodexParentSessionIDs = nextExpandedSessionIDs;
   }
 
   promptLocalCodexSessionDeletion(
@@ -711,6 +747,7 @@ export class EuphonyApp extends LitElement {
     this.isLoadingLocalCodexSessions = false;
     this.isLoadingLocalCodexSession = false;
     this.activeLocalCodexSessionRequestID = null;
+    this.expandedLocalCodexParentSessionIDs = new Set();
 
     const localState = await loadLocalCodexBrowserState(
       this.apiManager,
@@ -755,6 +792,7 @@ export class EuphonyApp extends LitElement {
     this.localCodexSessionsErrorMessage = '';
     this.localCodexDetailErrorMessage = '';
     this.selectedLocalCodexSessionIDs = new Set();
+    this.expandedLocalCodexParentSessionIDs = new Set();
     this.clearRenderedData();
     this.dataType = DataType.CONVERSATION;
 
@@ -1816,10 +1854,19 @@ export class EuphonyApp extends LitElement {
     const selectedSession = this.localCodexSessions.find(
       session => session.id === this.selectedLocalCodexSessionId
     );
-    const selectedSessionCount = this.selectedLocalCodexSessionIDs.size;
+    const sessionTree = buildLocalCodexSessionTree(this.localCodexSessions);
+    const visibleSessionIds = getVisibleLocalCodexSessionIds(
+      sessionTree,
+      this.expandedLocalCodexParentSessionIDs
+    );
+    const visibleSessionIdSet = new Set(visibleSessionIds);
+    const selectedVisibleSessionIds = [
+      ...this.selectedLocalCodexSessionIDs
+    ].filter(sessionId => visibleSessionIdSet.has(sessionId));
+    const selectedSessionCount = selectedVisibleSessionIds.length;
     const allSessionsSelected =
       selectedSessionCount > 0 &&
-      selectedSessionCount === this.localCodexSessions.length;
+      selectedSessionCount === visibleSessionIds.length;
 
     const projectOptions = this.localCodexProjects.map(
       project => html`
@@ -1832,10 +1879,77 @@ export class EuphonyApp extends LitElement {
       `
     );
 
-    const sessionRows = this.localCodexSessions.map(session => {
+    const childSummaryText = (children: CodexSessionSummary[]): string => {
+      if (children.length === 0) {
+        return '';
+      }
+
+      const childCountText = `${NUM_FORMATTER(children.length)} subagent${
+        children.length === 1 ? '' : 's'
+      }`;
+      const nicknames = [
+        ...new Set(
+          children
+            .map(child => child.agentNickname)
+            .filter((nickname): nickname is string => nickname !== null)
+        )
+      ];
+      if (nicknames.length === 0) {
+        return childCountText;
+      }
+
+      const visibleNicknames = nicknames.slice(0, 3).join(', ');
+      const hiddenNicknameCount = nicknames.length - 3;
+      return hiddenNicknameCount > 0
+        ? `${childCountText}: ${visibleNicknames}, +${NUM_FORMATTER(hiddenNicknameCount)} more`
+        : `${childCountText}: ${visibleNicknames}`;
+    };
+
+    const renderSessionRow = ({
+      session,
+      children = [],
+      isChild = false,
+      isOrphanSubagent = false
+    }: {
+      session: CodexSessionSummary;
+      children?: CodexSessionSummary[];
+      isChild?: boolean;
+      isOrphanSubagent?: boolean;
+    }) => {
       const sessionTimestamp = session.updatedAt ?? session.createdAt ?? null;
+      const hasChildren = children.length > 0;
+      const isExpanded = this.expandedLocalCodexParentSessionIDs.has(
+        session.id
+      );
+      const childrenListId = `local-codex-session-children-${session.id}`;
+      const sessionIsSubagent = isLocalCodexSubagentSession(session);
       return html`
-        <li class="local-codex-session-row">
+        <div
+          class=${`local-codex-session-row${
+            isChild ? ' local-codex-session-child-row' : ''
+          }`}
+        >
+          ${hasChildren
+            ? html`
+                <button
+                  class="local-codex-session-expand-button"
+                  type="button"
+                  aria-controls=${childrenListId}
+                  aria-expanded=${isExpanded ? 'true' : 'false'}
+                  aria-label=${`${isExpanded ? 'Collapse' : 'Expand'} subagents for ${session.title}`}
+                  ?disabled=${this.isLoadingData ||
+                  this.isDeletingLocalCodexSessions}
+                  @click=${() => {
+                    this.toggleLocalCodexParentSessionExpansion(
+                      session.id,
+                      children.map(child => child.id)
+                    );
+                  }}
+                >
+                  <span class="svg-icon icon">${unsafeHTML(iconChevronUpSm)}</span>
+                </button>
+              `
+            : html`<span class="local-codex-session-expand-spacer"></span>`}
           <input
             class="local-codex-session-checkbox"
             id=${`local-codex-session-select-${session.id}`}
@@ -1852,21 +1966,40 @@ export class EuphonyApp extends LitElement {
           <button
             class="local-codex-session-content"
             ?is-selected=${session.id === this.selectedLocalCodexSessionId}
+            ?is-child=${isChild}
             ?disabled=${this.isLoadingData || this.isDeletingLocalCodexSessions}
             @click=${() => {
               this.localCodexSessionClicked(session);
             }}
           >
             <span class="local-codex-session-main">
-              <span class="local-codex-session-title">${session.title}</span>
+              <span class="local-codex-session-title-line">
+                ${session.agentNickname
+                  ? html`<span class="local-codex-agent-nickname"
+                      >${session.agentNickname}</span
+                    >`
+                  : ''}
+                <span class="local-codex-session-title">${session.title}</span>
+              </span>
               <span class="local-codex-session-preview"
                 >${session.preview}</span
               >
+              ${hasChildren
+                ? html`<span class="local-codex-session-child-summary"
+                    >${childSummaryText(children)}</span
+                  >`
+                : ''}
               <span class="local-codex-session-path"
                 >${session.cwd ?? 'Unknown project'}</span
               >
             </span>
             <span class="local-codex-session-meta">
+              ${sessionIsSubagent
+                ? html`<span class="local-codex-subagent">Subagent</span>`
+                : ''}
+              ${isOrphanSubagent
+                ? html`<span class="local-codex-orphan-subagent">Orphan</span>`
+                : ''}
               ${session.archived
                 ? html`<span class="local-codex-archived">Archived</span>`
                 : ''}
@@ -1876,9 +2009,43 @@ export class EuphonyApp extends LitElement {
               >
             </span>
           </button>
+        </div>
+      `;
+    };
+
+    const renderSessionItem = (item: LocalCodexSessionTreeItem) => {
+      const isExpanded = this.expandedLocalCodexParentSessionIDs.has(
+        item.session.id
+      );
+      const childrenListId = `local-codex-session-children-${item.session.id}`;
+      return html`
+        <li class="local-codex-session-item">
+          ${renderSessionRow({
+            session: item.session,
+            children: item.children,
+            isOrphanSubagent: item.isOrphanSubagent
+          })}
+          ${item.children.length > 0 && isExpanded
+            ? html`
+                <ul
+                  class="local-codex-session-child-list"
+                  id=${childrenListId}
+                >
+                  ${item.children.map(
+                    child => html`
+                      <li class="local-codex-session-child-item">
+                        ${renderSessionRow({ session: child, isChild: true })}
+                      </li>
+                    `
+                  )}
+                </ul>
+              `
+            : ''}
         </li>
       `;
-    });
+    };
+
+    const sessionRows = sessionTree.map(renderSessionItem);
 
     const warningRows = this.localCodexWarnings.map(
       warning => html`<li>${warning}</li>`
@@ -1890,6 +2057,14 @@ export class EuphonyApp extends LitElement {
     const selectedSessionMeta = selectedSession
       ? html`
           <span class="local-codex-detail-meta">
+            ${isLocalCodexSubagentSession(selectedSession)
+              ? html`<span class="local-codex-subagent">Subagent</span>`
+              : ''}
+            ${selectedSession.agentNickname
+              ? html`<span class="local-codex-agent-nickname"
+                  >${selectedSession.agentNickname}</span
+                >`
+              : ''}
             ${selectedSession.archived
               ? html`<span class="local-codex-archived">Archived</span>`
               : ''}
@@ -2025,7 +2200,7 @@ export class EuphonyApp extends LitElement {
                     class="button local-codex-session-select-button"
                     ?disabled=${this.isLoadingData ||
                     this.isDeletingLocalCodexSessions ||
-                    this.localCodexSessions.length === 0}
+                    visibleSessionIds.length === 0}
                     @click=${() => {
                       this.toggleSelectAllLocalCodexSessions();
                     }}
@@ -2039,7 +2214,7 @@ export class EuphonyApp extends LitElement {
                     selectedSessionCount === 0}
                     @click=${() => {
                       this.promptLocalCodexSessionDeletion(
-                        [...this.selectedLocalCodexSessionIDs],
+                        selectedVisibleSessionIds,
                         `${NUM_FORMATTER(selectedSessionCount)} selected session${
                           selectedSessionCount === 1 ? '' : 's'
                         }`

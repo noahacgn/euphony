@@ -61,7 +61,10 @@ test('APIManager reads local Codex projects, sessions, and detail through backen
             rolloutPath: 'D:/codex/rollout-session-1.jsonl',
             createdAt: '2026-05-03T10:00:00Z',
             updatedAt: '2026-05-03T10:01:00Z',
-            archived: false
+            archived: false,
+            threadSource: 'subagent',
+            parentSessionId: 'parent-session',
+            agentNickname: 'Carson'
           }
         ],
         warnings: []
@@ -109,7 +112,10 @@ test('APIManager reads local Codex projects, sessions, and detail through backen
             rolloutPath: 'D:/codex/rollout-session-1.jsonl',
             createdAt: '2026-05-03T10:00:00Z',
             updatedAt: '2026-05-03T10:01:00Z',
-            archived: false
+            archived: false,
+            threadSource: 'subagent',
+            parentSessionId: 'parent-session',
+            agentNickname: 'Carson'
           }
         ],
         warnings: []
