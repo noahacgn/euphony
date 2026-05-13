@@ -24,6 +24,9 @@ class CodexSessionSummary:
     created_at: str | None
     updated_at: str | None
     archived: bool
+    thread_source: str | None
+    parent_session_id: str | None
+    agent_nickname: str | None
 
 
 @dataclass(frozen=True)
@@ -305,6 +308,9 @@ def _build_session_summary(
     created_at = summary_fields.first_timestamp or filename_timestamp
     updated_at = summary_fields.last_timestamp or created_at
     title = session_index_titles.get(session_id) or preview or rollout_path.stem
+    thread_source = _get_first_text(session_meta, ["thread_source"])
+    parent_session_id = _extract_parent_session_id(session_meta, thread_source)
+    agent_nickname = _extract_agent_nickname(session_meta)
 
     return (
         CodexSessionSummary(
@@ -318,6 +324,9 @@ def _build_session_summary(
             created_at=created_at,
             updated_at=updated_at,
             archived=archived,
+            thread_source=thread_source,
+            parent_session_id=parent_session_id,
+            agent_nickname=agent_nickname,
         ),
         summary_fields.warning,
     )
@@ -498,6 +507,46 @@ def _get_first_text(source: dict[str, Any], keys: list[str]) -> str | None:
         if stripped_value != "":
             return stripped_value
     return None
+
+
+def _extract_parent_session_id(
+    session_meta: dict[str, Any],
+    thread_source: str | None,
+) -> str | None:
+    parent_thread_id = _get_nested_text(
+        session_meta,
+        ["source", "subagent", "thread_spawn", "parent_thread_id"],
+    )
+    if parent_thread_id is not None:
+        return parent_thread_id
+
+    if thread_source == "subagent":
+        return _get_first_text(session_meta, ["forked_from_id"])
+
+    return None
+
+
+def _extract_agent_nickname(session_meta: dict[str, Any]) -> str | None:
+    return _get_first_text(session_meta, ["agent_nickname"]) or _get_nested_text(
+        session_meta,
+        ["source", "subagent", "thread_spawn", "agent_nickname"],
+    )
+
+
+def _get_nested_text(source: dict[str, Any], path: list[str]) -> str | None:
+    current_value: Any = source
+    for key in path:
+        if not isinstance(current_value, dict):
+            return None
+        current_value = current_value.get(key)
+
+    if not isinstance(current_value, str):
+        return None
+
+    stripped_value = current_value.strip()
+    if stripped_value == "":
+        return None
+    return stripped_value
 
 
 def _build_project_summaries(

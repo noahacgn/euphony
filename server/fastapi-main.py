@@ -111,6 +111,9 @@ class CodexSessionAPIResponse(BaseModel):
     createdAt: str | None
     updatedAt: str | None
     archived: bool
+    threadSource: str | None
+    parentSessionId: str | None
+    agentNickname: str | None
 
 
 class CodexSessionsAPIResponse(BaseModel):
@@ -194,6 +197,9 @@ def _to_codex_session_api_response(
         createdAt=session.created_at,
         updatedAt=session.updated_at,
         archived=session.archived,
+        threadSource=session.thread_source,
+        parentSessionId=session.parent_session_id,
+        agentNickname=session.agent_nickname,
     )
 
 

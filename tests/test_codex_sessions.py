@@ -192,6 +192,9 @@ def test_discovers_active_and_archived_rollouts_grouped_by_project(
     assert active_session.created_at == "2026-05-03T10:20:30Z"
     assert active_session.updated_at == "2026-05-03T10:21:00Z"
     assert active_session.archived is False
+    assert active_session.thread_source is None
+    assert active_session.parent_session_id is None
+    assert active_session.agent_nickname is None
 
     archived_session = sessions_by_id["archived-session"]
     assert archived_session.title == "Archived preview"
@@ -270,6 +273,148 @@ def test_scan_prefers_real_user_message_over_legacy_user_response_item(
     assert scan.sessions[0].project_id == str(project_root.resolve())
     assert scan.sessions[0].project_name == "euphony"
     assert scan.warnings == []
+
+
+def test_scan_extracts_subagent_parent_and_nickname_metadata(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    (project_root / ".git").mkdir(parents=True)
+
+    parent_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T09-00-00-parent-session.jsonl"
+    )
+    child_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T09-01-00-child-session.jsonl"
+    )
+    fallback_parent_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T09-02-00-fallback-child.jsonl"
+    )
+
+    write_jsonl(
+        parent_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T09:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": "parent-session", "cwd": str(project_root)},
+            }
+        ],
+    )
+    write_jsonl(
+        child_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T09:01:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "child-session",
+                    "cwd": str(project_root),
+                    "thread_source": "subagent",
+                    "agent_nickname": "TopLevelNick",
+                    "source": {
+                        "subagent": {
+                            "thread_spawn": {
+                                "parent_thread_id": "parent-session",
+                                "depth": 1,
+                                "agent_nickname": "NestedNick",
+                            }
+                        }
+                    },
+                },
+            }
+        ],
+    )
+    write_jsonl(
+        fallback_parent_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T09:02:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "fallback-child",
+                    "forked_from_id": "fallback-parent",
+                    "cwd": str(project_root),
+                    "thread_source": "subagent",
+                    "source": {"subagent": {"thread_spawn": {"depth": 1}}},
+                },
+            }
+        ],
+    )
+
+    scan = scan_codex_sessions(codex_home)
+
+    sessions_by_id = {session.id: session for session in scan.sessions}
+    child_session = sessions_by_id["child-session"]
+    assert child_session.thread_source == "subagent"
+    assert child_session.parent_session_id == "parent-session"
+    assert child_session.agent_nickname == "TopLevelNick"
+
+    fallback_child_session = sessions_by_id["fallback-child"]
+    assert fallback_child_session.thread_source == "subagent"
+    assert fallback_child_session.parent_session_id == "fallback-parent"
+    assert fallback_child_session.agent_nickname is None
+
+
+def test_scan_keeps_orphan_subagent_sessions_visible(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    (project_root / ".git").mkdir(parents=True)
+
+    write_jsonl(
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T09-03-00-orphan-child.jsonl",
+        [
+            {
+                "timestamp": "2026-05-03T09:03:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "orphan-child",
+                    "cwd": str(project_root),
+                    "thread_source": "subagent",
+                    "source": {
+                        "subagent": {
+                            "thread_spawn": {
+                                "parent_thread_id": "missing-parent",
+                                "depth": 1,
+                                "agent_nickname": "OrphanNick",
+                            }
+                        }
+                    },
+                },
+            }
+        ],
+    )
+
+    scan = scan_codex_sessions(codex_home)
+
+    assert [session.id for session in scan.sessions] == ["orphan-child"]
+    assert scan.sessions[0].thread_source == "subagent"
+    assert scan.sessions[0].parent_session_id == "missing-parent"
+    assert scan.sessions[0].agent_nickname == "OrphanNick"
+    assert scan.projects[0].session_count == 1
 
 
 def test_projects_are_sorted_by_latest_session_activity(tmp_path: Path) -> None:
@@ -458,6 +603,72 @@ def test_delete_codex_session_rollouts_rejects_unknown_ids_before_mutation(
     assert deleted_session_ids == ["delete-active", "delete-archived"]
     assert not active_rollout.exists()
     assert not archived_rollout.exists()
+
+
+def test_delete_parent_codex_session_does_not_delete_subagent_rollouts(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    project_root = tmp_path / "workspace" / "euphony"
+    (project_root / ".git").mkdir(parents=True)
+
+    parent_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T12-10-00-delete-parent.jsonl"
+    )
+    child_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T12-11-00-delete-child.jsonl"
+    )
+    write_jsonl(
+        parent_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T12:10:00Z",
+                "type": "session_meta",
+                "payload": {"id": "delete-parent", "cwd": str(project_root)},
+            }
+        ],
+    )
+    write_jsonl(
+        child_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T12:11:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "delete-child",
+                    "cwd": str(project_root),
+                    "thread_source": "subagent",
+                    "source": {
+                        "subagent": {
+                            "thread_spawn": {
+                                "parent_thread_id": "delete-parent",
+                                "depth": 1,
+                            }
+                        }
+                    },
+                },
+            }
+        ],
+    )
+
+    deleted_session_ids = delete_codex_session_rollouts(
+        ["delete-parent"],
+        codex_home,
+    )
+
+    assert deleted_session_ids == ["delete-parent"]
+    assert not parent_rollout.exists()
+    assert child_rollout.exists()
 
 
 def test_delete_codex_session_rollouts_reports_filesystem_errors(
@@ -659,6 +870,14 @@ def test_codex_session_api_lists_projects_sessions_and_detail(
         / "01"
         / "rollout-2026-05-01T15-00-00-api-other.jsonl"
     )
+    child_rollout = (
+        codex_home
+        / "sessions"
+        / "2026"
+        / "05"
+        / "03"
+        / "rollout-2026-05-03T15-02-00-api-child.jsonl"
+    )
     active_events = [
         {
             "timestamp": "2026-05-03T15:00:00Z",
@@ -679,6 +898,29 @@ def test_codex_session_api_lists_projects_sessions_and_detail(
                 "timestamp": "2026-05-02T15:00:00Z",
                 "type": "session_meta",
                 "payload": {"id": "api-archived", "cwd": str(nested_cwd)},
+            }
+        ],
+    )
+    write_jsonl(
+        child_rollout,
+        [
+            {
+                "timestamp": "2026-05-03T15:02:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "api-child",
+                    "cwd": str(nested_cwd),
+                    "thread_source": "subagent",
+                    "source": {
+                        "subagent": {
+                            "thread_spawn": {
+                                "parent_thread_id": "api-active",
+                                "depth": 1,
+                                "agent_nickname": "Carson",
+                            }
+                        }
+                    },
+                },
             }
         ],
     )
@@ -704,7 +946,7 @@ def test_codex_session_api_lists_projects_sessions_and_detail(
     projects_by_id = {
         project["id"]: project for project in projects_body["projects"]
     }
-    assert projects_by_id[str(project_root.resolve())]["sessionCount"] == 2
+    assert projects_by_id[str(project_root.resolve())]["sessionCount"] == 3
     assert projects_by_id[str(project_root.resolve())]["name"] == "euphony"
 
     sessions_response = client.get(
@@ -717,14 +959,20 @@ def test_codex_session_api_lists_projects_sessions_and_detail(
     sessions_by_id = {
         session["id"]: session for session in sessions_body["sessions"]
     }
-    assert set(sessions_by_id) == {"api-active", "api-archived"}
+    assert set(sessions_by_id) == {"api-active", "api-archived", "api-child"}
     assert sessions_by_id["api-active"]["projectId"] == str(project_root.resolve())
     assert sessions_by_id["api-active"]["projectName"] == "euphony"
     assert sessions_by_id["api-active"]["rolloutPath"] == str(active_rollout.resolve())
     assert sessions_by_id["api-active"]["createdAt"] == "2026-05-03T15:00:00Z"
     assert sessions_by_id["api-active"]["updatedAt"] == "2026-05-03T15:01:00Z"
     assert sessions_by_id["api-active"]["archived"] is False
+    assert sessions_by_id["api-active"]["threadSource"] is None
+    assert sessions_by_id["api-active"]["parentSessionId"] is None
+    assert sessions_by_id["api-active"]["agentNickname"] is None
     assert sessions_by_id["api-archived"]["archived"] is True
+    assert sessions_by_id["api-child"]["threadSource"] == "subagent"
+    assert sessions_by_id["api-child"]["parentSessionId"] == "api-active"
+    assert sessions_by_id["api-child"]["agentNickname"] == "Carson"
 
     detail_response = client.get("/codex-sessions/sessions/api-active/")
     assert detail_response.status_code == 200
