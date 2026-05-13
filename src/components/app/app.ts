@@ -1897,19 +1897,44 @@ export class EuphonyApp extends LitElement {
               datetime=${ifDefined(selectedSessionTimestamp ?? undefined)}
               >${formatLocalCodexTimestamp(selectedSessionTimestamp)}</time
             >
-            <button
-              class="button local-codex-detail-delete-button"
-              ?disabled=${this.isLoadingData || this.isDeletingLocalCodexSessions}
-              @click=${() => {
-                this.promptLocalCodexSessionDeletion(
-                  [selectedSession.id],
-                  `"${selectedSession.title}" (${selectedSession.id})`
-                );
-              }}
-            >
-              <span class="svg-icon icon">${unsafeHTML(iconTrash)}</span>
-              Delete session
-            </button>
+            <span class="local-codex-detail-actions">
+              <sl-copy-button
+                class="local-codex-detail-copy-button"
+                .value=${selectedSession.rolloutPath}
+                ?disabled=${this.isLoadingData ||
+                this.isDeletingLocalCodexSessions}
+                copy-label="Copy session file path"
+                success-label="Session file path copied"
+                error-label="Failed to copy session file path"
+                hoist
+              >
+                <sl-icon
+                  slot="copy-icon"
+                  library="system"
+                  name="copy"
+                  aria-hidden="true"
+                ></sl-icon>
+                <span
+                  slot="copy-icon"
+                  class="local-codex-detail-copy-assistive-text"
+                  >Copy session file path</span
+                >
+              </sl-copy-button>
+              <button
+                class="button local-codex-detail-delete-button"
+                ?disabled=${this.isLoadingData ||
+                this.isDeletingLocalCodexSessions}
+                @click=${() => {
+                  this.promptLocalCodexSessionDeletion(
+                    [selectedSession.id],
+                    `"${selectedSession.title}" (${selectedSession.id})`
+                  );
+                }}
+              >
+                <span class="svg-icon icon">${unsafeHTML(iconTrash)}</span>
+                Delete session
+              </button>
+            </span>
           </span>
         `
       : html`

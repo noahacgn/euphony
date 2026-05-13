@@ -779,6 +779,58 @@ button,
   text-align: right;
 }
 
+.local-codex-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.local-codex-detail-copy-button {
+  --success-color: var(--green-700);
+  --error-color: var(--red-700);
+  --sl-tooltip-font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu,
+    Cantarell, 'Helvetica Neue', sans-serif;
+  --sl-tooltip-font-size: var(--font-d3);
+  --sl-tooltip-background-color: var(--gray-800);
+  --sl-tooltip-border-radius: 4px;
+  --sl-tooltip-padding: 2px 5px 3px;
+}
+
+.local-codex-detail-copy-button::part(button) {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--euphony-border-radius);
+  color: var(--gray-700);
+  background: white;
+  box-sizing: border-box;
+}
+
+.local-codex-detail-copy-button::part(button):hover {
+  border-color: color-mix(in lab, var(--gray-300), black 5%);
+  background: color-mix(in lab, var(--gray-100), white 5%);
+}
+
+.local-codex-detail-copy-button[disabled]::part(button) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.local-codex-detail-copy-assistive-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+  white-space: nowrap;
+}
+
 .local-codex-session-actions {
   display: flex;
   justify-content: space-between;
@@ -1006,6 +1058,10 @@ button,
   .local-codex-detail-meta {
     align-items: flex-start;
     text-align: left;
+  }
+
+  .local-codex-detail-actions {
+    justify-content: flex-start;
   }
 }
 
