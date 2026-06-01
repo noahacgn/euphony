@@ -2441,7 +2441,7 @@ export class EuphonyConversation extends LitElement {
   //==========================================================================||
   render() {
     let header = html``;
-    let messageElements = html``;
+    const messageElements: TemplateResult[] = [];
     let metadataElement = html``;
 
     if (this.conversation) {
@@ -2809,7 +2809,7 @@ export class EuphonyConversation extends LitElement {
             ></euphony-message-hidden>`
           : html``;
 
-        messageElements = html`${messageElements}
+        messageElements.push(html`
           <div
             class="message"
             ?is-user=${role === Role.User}
@@ -2833,7 +2833,7 @@ export class EuphonyConversation extends LitElement {
             </div>
 
             ${messageContentTemplate} ${messageHiddenTemplate}
-          </div> `;
+          </div> `);
       }
 
       // Show the metadata
