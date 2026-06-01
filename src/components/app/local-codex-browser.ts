@@ -52,6 +52,12 @@ export interface LocalCodexSessionTreeItem {
   sortTimestamp: string | null;
 }
 
+export interface FilterLocalCodexSessionTreeResult {
+  treeItems: LocalCodexSessionTreeItem[];
+  matchedSessionIds: Set<string>;
+  autoExpandedParentSessionIds: Set<string>;
+}
+
 const LOCAL_CODEX_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
   month: '2-digit',
@@ -183,8 +189,91 @@ export const filterVisibleLocalCodexSessionSelection = (
     getVisibleLocalCodexSessionIds(treeItems, expandedParentSessionIds)
   );
   return new Set(
-    [...selectedSessionIds].filter(sessionId => visibleSessionIds.has(sessionId))
+    [...selectedSessionIds].filter(sessionId =>
+      visibleSessionIds.has(sessionId)
+    )
   );
+};
+
+const normalizeLocalCodexSessionSearchQuery = (query: string): string =>
+  query.trim().toLowerCase();
+
+const localCodexSessionSearchFields = (
+  session: CodexSessionSummary
+): string[] => [
+  session.title,
+  session.preview,
+  session.cwd ?? 'Unknown project',
+  session.agentNickname ?? '',
+  session.id
+];
+
+const localCodexSessionMatchesQuery = (
+  session: CodexSessionSummary,
+  normalizedQuery: string
+): boolean =>
+  localCodexSessionSearchFields(session).some(field =>
+    field.toLowerCase().includes(normalizedQuery)
+  );
+
+export const filterLocalCodexSessionTree = (
+  treeItems: LocalCodexSessionTreeItem[],
+  query: string
+): FilterLocalCodexSessionTreeResult => {
+  const normalizedQuery = normalizeLocalCodexSessionSearchQuery(query);
+  const matchedSessionIds = new Set<string>();
+  const autoExpandedParentSessionIds = new Set<string>();
+
+  if (normalizedQuery === '') {
+    return {
+      treeItems,
+      matchedSessionIds,
+      autoExpandedParentSessionIds
+    };
+  }
+
+  const filteredTreeItems = treeItems.flatMap(item => {
+    const sessionMatches = localCodexSessionMatchesQuery(
+      item.session,
+      normalizedQuery
+    );
+    if (sessionMatches) {
+      matchedSessionIds.add(item.session.id);
+    }
+
+    const matchingChildren = item.children.filter(child => {
+      const childMatches = localCodexSessionMatchesQuery(
+        child,
+        normalizedQuery
+      );
+      if (childMatches) {
+        matchedSessionIds.add(child.id);
+      }
+      return childMatches;
+    });
+
+    if (!sessionMatches && matchingChildren.length === 0) {
+      return [];
+    }
+
+    if (matchingChildren.length > 0) {
+      autoExpandedParentSessionIds.add(item.session.id);
+    }
+
+    // 搜索结果保留父子上下文，但只让真正命中的子会话进入结果，避免批量操作误选未命中会话。
+    return [
+      {
+        ...item,
+        children: matchingChildren
+      }
+    ];
+  });
+
+  return {
+    treeItems: filteredTreeItems,
+    matchedSessionIds,
+    autoExpandedParentSessionIds
+  };
 };
 
 // 让 sessions 页面直接跟随浏览器当前时区显示，避免把 UTC 字符串原样暴露给用户。
@@ -250,7 +339,7 @@ export const loadLocalCodexBrowserState = async (
       projectsResponse.projects.find(
         project => project.id === preferredProjectId
       ) ??
-      projectsResponse.projects[0] ??
+      projectsResponse.projects.at(0) ??
       null;
 
     if (selectedProject === null) {

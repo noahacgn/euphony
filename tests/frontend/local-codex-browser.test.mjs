@@ -242,10 +242,8 @@ test('loadLocalCodexBrowserState keeps the requested session when refresh still 
 });
 
 test('buildLocalCodexSessionTree groups subagents under their direct parent', async () => {
-  const {
-    buildLocalCodexSessionTree,
-    getVisibleLocalCodexSessionIds
-  } = await loadLocalCodexBrowserModule();
+  const { buildLocalCodexSessionTree, getVisibleLocalCodexSessionIds } =
+    await loadLocalCodexBrowserModule();
   const sessions = [
     {
       id: 'parent-session',
@@ -378,6 +376,248 @@ test('buildLocalCodexSessionTree keeps orphan subagents as top-level rows', asyn
   assert.equal(tree.length, 1);
   assert.equal(tree[0].session.id, 'orphan-child');
   assert.equal(tree[0].isOrphanSubagent, true);
+});
+
+test('filterLocalCodexSessionTree returns the full tree for an empty query', async () => {
+  const { buildLocalCodexSessionTree, filterLocalCodexSessionTree } =
+    await loadLocalCodexBrowserModule();
+  const sessions = [
+    {
+      id: 'parent-session',
+      title: 'Investigate search plan',
+      preview: 'Build left rail filter',
+      cwd: 'D:/IdeaProjects/euphony',
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'parent.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    },
+    {
+      id: 'child-session',
+      title: 'Subagent UI audit',
+      preview: 'Checks button spacing',
+      cwd: 'D:/IdeaProjects/euphony',
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'child.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'parent-session',
+      agentNickname: 'Aurora'
+    }
+  ];
+  const tree = buildLocalCodexSessionTree(sessions);
+
+  const result = filterLocalCodexSessionTree(tree, '   ');
+
+  assert.deepEqual(
+    result.treeItems.map(item => item.session.id),
+    ['parent-session']
+  );
+  assert.deepEqual(
+    result.treeItems[0].children.map(child => child.id),
+    ['child-session']
+  );
+  assert.deepEqual([...result.matchedSessionIds], []);
+  assert.deepEqual([...result.autoExpandedParentSessionIds], []);
+});
+
+test('filterLocalCodexSessionTree matches summary fields case-insensitively', async () => {
+  const { buildLocalCodexSessionTree, filterLocalCodexSessionTree } =
+    await loadLocalCodexBrowserModule();
+  const sessions = [
+    {
+      id: 'parent-session',
+      title: 'Investigate search plan',
+      preview: 'Build left rail filter',
+      cwd: 'D:/IdeaProjects/euphony',
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'parent.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    },
+    {
+      id: 'child-session',
+      title: 'Subagent UI audit',
+      preview: 'Checks button spacing',
+      cwd: 'D:/IdeaProjects/euphony',
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'child.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'parent-session',
+      agentNickname: 'Aurora'
+    },
+    {
+      id: 'report-123',
+      title: 'Release notes',
+      preview: 'Summarize app changes',
+      cwd: 'D:/Clients/billing',
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'report.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    }
+  ];
+  const tree = buildLocalCodexSessionTree(sessions);
+
+  assert.deepEqual(
+    [...filterLocalCodexSessionTree(tree, 'INVESTIGATE').matchedSessionIds],
+    ['parent-session']
+  );
+  assert.deepEqual(
+    [...filterLocalCodexSessionTree(tree, 'button spacing').matchedSessionIds],
+    ['child-session']
+  );
+  assert.deepEqual(
+    [...filterLocalCodexSessionTree(tree, 'clients/billing').matchedSessionIds],
+    ['report-123']
+  );
+  assert.deepEqual(
+    [...filterLocalCodexSessionTree(tree, 'aurora').matchedSessionIds],
+    ['child-session']
+  );
+  assert.deepEqual(
+    [...filterLocalCodexSessionTree(tree, 'REPORT-123').matchedSessionIds],
+    ['report-123']
+  );
+});
+
+test('filterLocalCodexSessionTree keeps matching children visible with parent context', async () => {
+  const { buildLocalCodexSessionTree, filterLocalCodexSessionTree } =
+    await loadLocalCodexBrowserModule();
+  const sessions = [
+    {
+      id: 'parent-session',
+      title: 'Parent session',
+      preview: 'Parent preview',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'parent.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    },
+    {
+      id: 'matching-child',
+      title: 'Needle child',
+      preview: 'Specific child preview',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'matching-child.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'parent-session',
+      agentNickname: 'Carson'
+    },
+    {
+      id: 'hidden-child',
+      title: 'Hidden child',
+      preview: 'Unmatched child preview',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'hidden-child.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'parent-session',
+      agentNickname: 'Drew'
+    }
+  ];
+  const tree = buildLocalCodexSessionTree(sessions);
+
+  const result = filterLocalCodexSessionTree(tree, 'needle');
+
+  assert.deepEqual(
+    result.treeItems.map(item => item.session.id),
+    ['parent-session']
+  );
+  assert.deepEqual(
+    result.treeItems[0].children.map(child => child.id),
+    ['matching-child']
+  );
+  assert.deepEqual([...result.matchedSessionIds], ['matching-child']);
+  assert.deepEqual(
+    [...result.autoExpandedParentSessionIds],
+    ['parent-session']
+  );
+});
+
+test('filterLocalCodexSessionTree does not include unmatched children when the parent matches', async () => {
+  const { buildLocalCodexSessionTree, filterLocalCodexSessionTree } =
+    await loadLocalCodexBrowserModule();
+  const sessions = [
+    {
+      id: 'matching-parent',
+      title: 'Needle parent',
+      preview: 'Parent preview',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'parent.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: null,
+      parentSessionId: null,
+      agentNickname: null
+    },
+    {
+      id: 'unmatched-child',
+      title: 'Child session',
+      preview: 'Child preview',
+      cwd: null,
+      projectId: 'project-a',
+      projectName: 'project-a',
+      rolloutPath: 'child.jsonl',
+      createdAt: null,
+      updatedAt: null,
+      archived: false,
+      threadSource: 'subagent',
+      parentSessionId: 'matching-parent',
+      agentNickname: 'Carson'
+    }
+  ];
+  const tree = buildLocalCodexSessionTree(sessions);
+
+  const result = filterLocalCodexSessionTree(tree, 'needle');
+
+  assert.deepEqual(
+    result.treeItems.map(item => item.session.id),
+    ['matching-parent']
+  );
+  assert.deepEqual(result.treeItems[0].children, []);
+  assert.deepEqual([...result.matchedSessionIds], ['matching-parent']);
+  assert.deepEqual([...result.autoExpandedParentSessionIds], []);
 });
 
 test('filterVisibleLocalCodexSessionSelection drops hidden collapsed child rows', async () => {
