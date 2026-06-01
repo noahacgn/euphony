@@ -1,35 +1,26 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import ts from 'typescript';
+import { createServer } from 'vite';
 
 async function loadLocalCodexBrowserModule() {
-  const sourcePath = join(
-    process.cwd(),
-    'src',
-    'components',
-    'app',
-    'local-codex-browser.ts'
-  );
-  const tempDir = await mkdtemp(join(tmpdir(), 'euphony-local-codex-browser-'));
-  const outputPath = join(tempDir, 'local-codex-browser.mjs');
-  const source = await readFile(sourcePath, 'utf8');
-  const output = ts.transpileModule(source, {
-    compilerOptions: {
-      module: ts.ModuleKind.ES2022,
-      target: ts.ScriptTarget.ES2022
+  const server = await createServer({
+    appType: 'custom',
+    configFile: false,
+    optimizeDeps: {
+      entries: [],
+      noDiscovery: true
+    },
+    server: {
+      hmr: false,
+      middlewareMode: true
     }
   });
-  await writeFile(outputPath, output.outputText, 'utf8');
   try {
-    const moduleURL = pathToFileURL(outputPath);
-    moduleURL.searchParams.set('t', Date.now().toString());
-    return await import(moduleURL.href);
+    return await server.ssrLoadModule(
+      `/src/components/app/local-codex-browser.ts?t=${Date.now()}`
+    );
   } finally {
-    await rm(tempDir, { force: true, recursive: true });
+    await server.close();
   }
 }
 
@@ -49,6 +40,131 @@ test('formatLocalCodexTimestamp formats timestamps in the browser timezone', asy
   assert.equal(formatLocalCodexTimestamp(timestamp), expected);
   assert.equal(formatLocalCodexTimestamp(null), 'Unknown time');
   assert.equal(formatLocalCodexTimestamp('not-a-date'), 'Unknown time');
+});
+
+test('buildLocalCodexMessageJumpItems keeps only rendered mainline messages', async () => {
+  const { buildLocalCodexMessageJumpItems } =
+    await loadLocalCodexBrowserModule();
+  const events = [
+    {
+      type: 'session_meta',
+      timestamp: '2026-05-03T10:00:00Z',
+      payload: {
+        id: 'session-mainline',
+        timestamp: '2026-05-03T10:00:00Z',
+        cwd: 'D:/IdeaProjects/euphony',
+        base_instructions: {
+          text: 'Follow the project instructions.'
+        }
+      }
+    },
+    {
+      type: 'response_item',
+      timestamp: '2026-05-03T10:01:00Z',
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [
+          {
+            text: 'Open the selected session\n\nand show the mainline.'
+          }
+        ]
+      }
+    },
+    {
+      type: 'response_item',
+      timestamp: '2026-05-03T10:02:00Z',
+      payload: {
+        type: 'reasoning',
+        summary: [
+          {
+            text: 'Internal reasoning should not appear in navigation.'
+          }
+        ]
+      }
+    },
+    {
+      type: 'response_item',
+      timestamp: '2026-05-03T10:03:00Z',
+      payload: {
+        type: 'function_call',
+        name: 'exec_command',
+        call_id: 'call-1',
+        arguments: JSON.stringify({ cmd: 'Get-ChildItem' })
+      }
+    },
+    {
+      type: 'response_item',
+      timestamp: '2026-05-03T10:04:00Z',
+      payload: {
+        type: 'function_call_output',
+        call_id: 'call-1',
+        output: 'command output'
+      }
+    },
+    {
+      type: 'response_item',
+      timestamp: '2026-05-03T10:05:00Z',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [
+          {
+            text: 'Here is the selected session summary.'
+          }
+        ]
+      }
+    }
+  ];
+
+  assert.deepEqual(buildLocalCodexMessageJumpItems(events), [
+    {
+      messageIndex: 2,
+      role: 'user',
+      preview: 'Open the selected session and show the mainline.'
+    },
+    {
+      messageIndex: 6,
+      role: 'assistant',
+      preview: 'Here is the selected session summary.'
+    }
+  ]);
+});
+
+test('buildLocalCodexMessageJumpItems returns no rows without mainline messages', async () => {
+  const { buildLocalCodexMessageJumpItems } =
+    await loadLocalCodexBrowserModule();
+  const events = [
+    {
+      type: 'session_meta',
+      payload: {
+        id: 'session-tools-only'
+      }
+    },
+    {
+      type: 'response_item',
+      payload: {
+        type: 'reasoning',
+        summary: [
+          {
+            text: 'Reasoning only.'
+          }
+        ]
+      }
+    },
+    {
+      type: 'response_item',
+      payload: {
+        type: 'function_call',
+        name: 'exec_command',
+        call_id: 'call-1',
+        arguments: JSON.stringify({ cmd: 'Get-Location' })
+      }
+    }
+  ];
+
+  assert.deepEqual(buildLocalCodexMessageJumpItems(events), []);
+  assert.deepEqual(buildLocalCodexMessageJumpItems([]), []);
 });
 
 test('loadLocalCodexBrowserState selects the first project and loads only summaries', async () => {

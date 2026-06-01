@@ -5,6 +5,8 @@ import type {
   CodexSessionSummary,
   CodexSessionsResponse
 } from '../../types/common-types';
+import { Role, type Message } from '../../types/harmony-types';
+import { parseCodexSession } from '../../utils/codex-session';
 
 export interface LocalCodexBrowserListAPI {
   listCodexProjects: (options?: {
@@ -52,6 +54,12 @@ export interface LocalCodexSessionTreeItem {
   sortTimestamp: string | null;
 }
 
+export interface LocalCodexMessageJumpItem {
+  messageIndex: number;
+  role: Role.User | Role.Assistant;
+  preview: string;
+}
+
 export interface FilterLocalCodexSessionTreeResult {
   treeItems: LocalCodexSessionTreeItem[];
   matchedSessionIds: Set<string>;
@@ -72,9 +80,74 @@ const mergeWarnings = (...warningGroups: string[][]): string[] => [
   ...new Set(warningGroups.flat())
 ];
 
+const MESSAGE_JUMP_PREVIEW_MAX_LENGTH = 96;
+
+const normalizeLocalCodexMessagePreview = (text: string): string =>
+  text.replace(/\s+/g, ' ').trim();
+
+const truncateLocalCodexMessagePreview = (text: string): string => {
+  if (text.length <= MESSAGE_JUMP_PREVIEW_MAX_LENGTH) {
+    return text;
+  }
+
+  return `${text
+    .slice(0, MESSAGE_JUMP_PREVIEW_MAX_LENGTH - 3)
+    .trimEnd()}...`;
+};
+
+const getLocalCodexMessagePreview = (message: Message): string => {
+  const messageTexts =
+    typeof message.content === 'string'
+      ? [message.content]
+      : message.content.map(content => {
+          if ('text' in content) {
+            return content.text;
+          }
+          if (
+            'instructions' in content &&
+            typeof content.instructions === 'string'
+          ) {
+            return content.instructions;
+          }
+          return '';
+        });
+  const preview =
+    messageTexts
+      .map(normalizeLocalCodexMessagePreview)
+      .find(text => text !== '') ?? '[empty message]';
+
+  return truncateLocalCodexMessagePreview(preview);
+};
+
 export const isLocalCodexSubagentSession = (
   session: CodexSessionSummary
 ): boolean => session.threadSource === 'subagent';
+
+export const buildLocalCodexMessageJumpItems = (
+  rawEvents: unknown[]
+): LocalCodexMessageJumpItem[] => {
+  const parseResult = parseCodexSession(rawEvents);
+  if (parseResult === null) {
+    return [];
+  }
+
+  return parseResult.conversation.messages.flatMap((message, messageIndex) => {
+    if (message.role !== Role.User && message.role !== Role.Assistant) {
+      return [];
+    }
+    if (message.role === Role.Assistant && message.channel === 'analysis') {
+      return [];
+    }
+
+    return [
+      {
+        messageIndex,
+        role: message.role,
+        preview: getLocalCodexMessagePreview(message)
+      }
+    ];
+  });
+};
 
 export const getLocalCodexSessionActivityTimestamp = (
   session: CodexSessionSummary

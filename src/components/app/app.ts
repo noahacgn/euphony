@@ -12,7 +12,7 @@ import type {
   RefreshRendererListRequest,
   TranslationRequest
 } from '../../types/common-types';
-import type { Conversation } from '../../types/harmony-types';
+import { Role, type Conversation } from '../../types/harmony-types';
 import {
   APIManager,
   BrowserAPIManager,
@@ -38,6 +38,7 @@ import type { LocalDataWorkerMessage } from './local-data-worker';
 import LocalDataWorkerInline from './local-data-worker?worker';
 import {
   buildLocalCodexSessionTree,
+  buildLocalCodexMessageJumpItems,
   filterLocalCodexSessionTree,
   getVisibleLocalCodexSessionIds,
   isLocalCodexSubagentSession,
@@ -45,6 +46,7 @@ import {
   loadLocalCodexProjectSessionsState,
   loadLocalCodexSessionDetail,
   formatLocalCodexTimestamp,
+  type LocalCodexMessageJumpItem,
   type LocalCodexSessionTreeItem
 } from './local-codex-browser';
 import { RequestWorker } from './request-worker';
@@ -104,7 +106,6 @@ type MenuItems =
 
 const NUM_FORMATTER = format(',d');
 const DEFAULT_ITEMS_PER_PAGE = 10;
-const HEADER_HEIGHT = 72;
 const LOCAL_CODEX_DELETE_ACTION_KEY = 'local-codex-session-delete';
 
 type ToastType = 'success' | 'warning' | 'error';
@@ -204,6 +205,12 @@ export class EuphonyApp extends LitElement {
 
   @state()
   isDeletingLocalCodexSessions = false;
+
+  @state()
+  localCodexMessageJumpItems: LocalCodexMessageJumpItem[] = [];
+
+  @state()
+  activeLocalCodexMessageJumpIndex: number | null = null;
 
   @state()
   dataType: DataType = DataType.CONVERSATION;
@@ -556,6 +563,8 @@ export class EuphonyApp extends LitElement {
     this.conversationData = [];
     this.JSONData = [];
     this.selectedConversationIDs = new Set();
+    this.localCodexMessageJumpItems = [];
+    this.activeLocalCodexMessageJumpIndex = null;
     this._totalConversationSize = 0;
     this._totalConversationSizeIncludingUnfiltered = 0;
   }
@@ -1500,35 +1509,44 @@ export class EuphonyApp extends LitElement {
       const conversationElement = element.querySelector<EuphonyConversation>(
         'euphony-conversation'
       );
-
-      if (!conversationElement) {
-        console.error('Conversation element not found');
-        return;
-      }
+      const codexElement = element.querySelector<EuphonyCodex>(
+        'euphony-codex'
+      );
 
       const targetMessageElement =
-        conversationElement.getMessageByIndex(messageIndex);
+        conversationElement?.getMessageByIndex(messageIndex) ??
+        codexElement?.getMessageByIndex(messageIndex) ??
+        null;
 
       if (!targetMessageElement) {
         console.error('Target message element not found');
         return;
       }
 
-      const top =
-        targetMessageElement.getBoundingClientRect().top +
-        window.scrollY -
-        HEADER_HEIGHT;
+      const appElement = this.shadowRoot?.querySelector<HTMLElement>('.app');
+      const headerElement =
+        this.shadowRoot?.querySelector<HTMLElement>('.header');
+      if (!appElement || !headerElement) {
+        throw Error('Header element or app element not found');
+      }
 
-      if (top) {
-        this.scrollToTop(top, behavior);
-        // Focus the sibling of targetMessageElement (message info)
-        const siblingElement =
-          targetMessageElement.previousElementSibling as HTMLElement | null;
-        if (siblingElement) {
-          siblingElement.focus();
-        } else {
-          console.warn('No sibling element to focus');
-        }
+      const TOP_OFFSET = 20;
+      const appRect = appElement.getBoundingClientRect();
+      const headerHeight = headerElement.getBoundingClientRect().height;
+      const messageTop =
+        targetMessageElement.getBoundingClientRect().top -
+        appRect.top +
+        appElement.scrollTop;
+      const top = Math.max(0, messageTop - headerHeight - TOP_OFFSET);
+
+      appElement.scrollTo({ top, behavior });
+      // Focus the sibling of targetMessageElement (message info)
+      const siblingElement =
+        targetMessageElement.previousElementSibling as HTMLElement | null;
+      if (siblingElement) {
+        siblingElement.focus();
+      } else {
+        console.warn('No sibling element to focus');
       }
     }
   };
@@ -1858,6 +1876,10 @@ export class EuphonyApp extends LitElement {
     this.localCodexDetailErrorMessage = detailState.errorMessage;
     this.codexSessionData =
       detailState.sessionData.length > 0 ? [detailState.sessionData] : [];
+    this.localCodexMessageJumpItems = buildLocalCodexMessageJumpItems(
+      detailState.sessionData
+    );
+    this.activeLocalCodexMessageJumpIndex = null;
     this.allConversationData = [];
     this.conversationData = [];
     this.JSONData = [];
@@ -1874,6 +1896,11 @@ export class EuphonyApp extends LitElement {
       await this.updateComplete;
       this.scrollToConversation('#conversation-0');
     }
+  }
+
+  localCodexMessageJumpClicked(messageIndex: number): void {
+    this.activeLocalCodexMessageJumpIndex = messageIndex;
+    this.scrollToMessage('#conversation-0', messageIndex);
   }
 
   renderLocalCodexBrowser(conversationsTemplate: TemplateResult) {
@@ -2178,6 +2205,61 @@ export class EuphonyApp extends LitElement {
           <span class="local-codex-detail-meta">No session selected</span>
         `;
 
+    const messageJumpTemplate =
+      this.localCodexMessageJumpItems.length > 0
+        ? html`
+            <aside
+              class="local-codex-message-jump"
+              aria-label="Session message jump list"
+            >
+              <div class="local-codex-message-jump-header">
+                <h2>Messages</h2>
+                <span>
+                  ${NUM_FORMATTER(this.localCodexMessageJumpItems.length)}
+                </span>
+              </div>
+              <ol class="local-codex-message-jump-list">
+                ${this.localCodexMessageJumpItems.map(item => {
+                  const roleLabel =
+                    item.role === Role.User ? 'User' : 'Assistant';
+                  return html`
+                    <li class="local-codex-message-jump-item">
+                      <button
+                        class="local-codex-message-jump-button"
+                        type="button"
+                        ?is-active=${item.messageIndex ===
+                        this.activeLocalCodexMessageJumpIndex}
+                        aria-current=${ifDefined(
+                          item.messageIndex ===
+                            this.activeLocalCodexMessageJumpIndex
+                            ? 'true'
+                            : undefined
+                        )}
+                        aria-label=${`Jump to ${roleLabel} message ${item.messageIndex}`}
+                        @click=${() => {
+                          this.localCodexMessageJumpClicked(
+                            item.messageIndex
+                          );
+                        }}
+                      >
+                        <span class="local-codex-message-jump-role">
+                          ${roleLabel}
+                        </span>
+                        <span class="local-codex-message-jump-preview">
+                          ${item.preview}
+                        </span>
+                        <span class="local-codex-message-jump-index">
+                          #${item.messageIndex}
+                        </span>
+                      </button>
+                    </li>
+                  `;
+                })}
+              </ol>
+            </aside>
+          `
+        : html``;
+
     let bodyTemplate = html``;
     if (this.localCodexErrorMessage !== '') {
       bodyTemplate = html`
@@ -2223,7 +2305,10 @@ export class EuphonyApp extends LitElement {
                 `;
 
       bodyTemplate = html`
-        <div class="local-codex-master-detail">
+        <div
+          class="local-codex-master-detail"
+          ?has-message-jump=${this.localCodexMessageJumpItems.length > 0}
+        >
           <section
             class="local-codex-master"
             aria-label="Codex projects and sessions"
@@ -2369,6 +2454,7 @@ export class EuphonyApp extends LitElement {
             </div>
             ${detailContentTemplate}
           </section>
+          ${messageJumpTemplate}
         </div>
       `;
     }

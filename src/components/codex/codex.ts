@@ -223,6 +223,10 @@ export class EuphonyCodex extends LitElement {
   translationButtonClicked() {
     void this.conversationComponent?.translationButtonClicked();
   }
+
+  getMessageByIndex(messageIndex: number): HTMLElement | null {
+    return this.conversationComponent?.getMessageByIndex(messageIndex) ?? null;
+  }
 }
 
 declare global {
