@@ -12,7 +12,6 @@ import {
   customElement,
   property,
   query,
-  queryAsync,
   state
 } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
@@ -2657,7 +2656,9 @@ export class EuphonyConversation extends LitElement {
           name: 'Euphony',
           content: [
             {
-              text: `This conversation is truncated to ${MAX_MESSAGE_COUNT} messages from the bottom (total: ${curMessages.length}).`
+              text:
+                `This conversation is truncated to ${MAX_MESSAGE_COUNT} messages ` +
+                `from the bottom (total: ${curMessages.length}).`
             }
           ],
           recipient: 'all',
