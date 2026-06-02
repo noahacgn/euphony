@@ -2227,6 +2227,8 @@ export class EuphonyApp extends LitElement {
                       <button
                         class="local-codex-message-jump-button"
                         type="button"
+                        ?is-user=${item.role === Role.User}
+                        ?is-assistant=${item.role === Role.Assistant}
                         ?is-active=${item.messageIndex ===
                         this.activeLocalCodexMessageJumpIndex}
                         aria-current=${ifDefined(

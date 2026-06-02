@@ -795,6 +795,10 @@ button,
 }
 
 .local-codex-message-jump-button {
+  --local-codex-message-jump-color: var(--gray-700);
+  --local-codex-message-jump-border: var(--gray-200);
+  --local-codex-message-jump-background: var(--gray-50);
+
   width: 100%;
   min-height: 38px;
   display: grid;
@@ -805,6 +809,8 @@ button,
   gap: 3px 8px;
   padding: 7px 8px;
   border: 1px solid transparent;
+  border-left-width: 3px;
+  border-left-color: var(--local-codex-message-jump-border);
   border-radius: var(--euphony-border-radius);
   color: var(--gray-800);
   background: transparent;
@@ -813,8 +819,8 @@ button,
   line-height: 1.25;
 
   &:hover {
-    border-color: var(--gray-200);
-    background: var(--gray-50);
+    border-color: var(--local-codex-message-jump-border);
+    background: var(--local-codex-message-jump-background);
   }
 
   &:focus-visible {
@@ -824,8 +830,20 @@ button,
   }
 
   &[is-active] {
-    border-color: var(--blue-300);
-    background: var(--blue-50);
+    border-color: var(--local-codex-message-jump-border);
+    background: var(--local-codex-message-jump-background);
+  }
+
+  &[is-user] {
+    --local-codex-message-jump-color: var(--green-700);
+    --local-codex-message-jump-border: var(--green-300);
+    --local-codex-message-jump-background: var(--green-50);
+  }
+
+  &[is-assistant] {
+    --local-codex-message-jump-color: var(--purple-700);
+    --local-codex-message-jump-border: var(--purple-300);
+    --local-codex-message-jump-background: var(--purple-50);
   }
 }
 
@@ -833,7 +851,17 @@ button,
   grid-area: role;
   min-width: 0;
   overflow: hidden;
-  color: var(--gray-700);
+  width: max-content;
+  max-width: 100%;
+  padding: 1px 5px;
+  border: 1px solid var(--local-codex-message-jump-border);
+  border-radius: var(--euphony-border-radius);
+  color: var(--local-codex-message-jump-color);
+  background: color-mix(
+    in lab,
+    var(--local-codex-message-jump-background) 70%,
+    white 100%
+  );
   font-size: var(--font-d3);
   font-weight: 650;
   text-overflow: ellipsis;
