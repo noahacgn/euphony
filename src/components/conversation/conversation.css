@@ -454,6 +454,71 @@ euphony-text-message {
   }
 }
 
+.message-copy-wrapper {
+  grid-column: 2;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.message-copy-wrapper > euphony-message-text,
+.message-copy-wrapper > euphony-message-code,
+.message-copy-wrapper > euphony-message-system-content,
+.message-copy-wrapper > euphony-message-developer-content,
+.message-copy-wrapper > euphony-message-unsupported {
+  display: block;
+}
+
+.message-copy-button {
+  all: unset;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+
+  width: 0.95em;
+  height: 0.95em;
+  padding: 3px;
+  border-radius: 5px;
+  box-sizing: content-box;
+
+  color: var(--theme-gray-600);
+  background-color: color-mix(
+    in lab,
+    var(--theme-white-secondary) 88%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 1px hsla(0, 0%, 0%, 0.25),
+    0 1px 4px hsla(0, 0%, 0%, 0.12);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms linear,
+    background-color 120ms linear;
+
+  &:hover,
+  &:focus-visible {
+    background-color: var(--theme-gray-200);
+  }
+
+  &:active {
+    background-color: var(--theme-gray-300);
+  }
+
+  &:focus-visible {
+    outline: 1px solid currentColor;
+    outline-offset: 2px;
+  }
+}
+
+.message-copy-wrapper:hover .message-copy-button,
+.message-copy-wrapper:focus-within .message-copy-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .message-info {
   grid-column: 1;
   padding: var(--message-info-padding);
@@ -1064,6 +1129,16 @@ sl-split-panel {
   .delete-button {
     color: var(--pink-400);
   }
+}
+
+.editable-message .message-copy-wrapper {
+  height: auto;
+}
+
+.editable-message .message-copy-button {
+  flex: 0 0 auto;
+  width: 0.95em;
+  height: 0.95em;
 }
 
 .add-message-type-menu {

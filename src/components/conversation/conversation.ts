@@ -43,6 +43,7 @@ import {
   updateFloatPosition,
   updatePopperOverlay
 } from '../../utils/utils';
+import { getMessageCopyText } from '../../utils/message-copy';
 import {
   EuphonyFloatingToolbar,
   FloatingToolbarButton
@@ -1172,7 +1173,8 @@ export class EuphonyConversation extends LitElement {
       | 'reorder-down'
       | 'custom-label'
       | 'preference'
-      | 'message-share',
+      | 'message-share'
+      | 'message-copy',
     maybeTooltipText?: string
   ) {
     e.stopPropagation();
@@ -1255,6 +1257,11 @@ export class EuphonyConversation extends LitElement {
 
         case 'message-share': {
           message = 'Copy a sharable URL for this message';
+          break;
+        }
+
+        case 'message-copy': {
+          message = 'Copy message content';
           break;
         }
 
@@ -1850,6 +1857,41 @@ export class EuphonyConversation extends LitElement {
     this.dispatchEvent(event);
   }
 
+  updateMessageCopyTooltip(anchor: HTMLElement, message: string) {
+    if (!this.popperTooltip) {
+      console.error('Popper tooltip not initialized.');
+      return;
+    }
+
+    if (this.toolbarTooltipDebouncer) {
+      clearTimeout(this.toolbarTooltipDebouncer);
+      this.toolbarTooltipDebouncer = null;
+    }
+
+    const labelElement = this.popperTooltip.querySelector('.popper-label');
+    labelElement!.textContent = message;
+    updatePopperOverlay(this.popperTooltip, anchor, 'top', true, 7);
+    this.popperTooltip.classList.remove('hidden');
+  }
+
+  async messageCopyButtonClicked(e: MouseEvent, message: Message, i: number) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const anchor = e.currentTarget as HTMLElement;
+    const contentType = tryGetContentTypeFromContent(message.content);
+    try {
+      await navigator.clipboard.writeText(getMessageCopyText(message));
+      this.updateMessageCopyTooltip(anchor, 'Copied');
+    } catch (error) {
+      console.error(
+        `Failed to copy message content at index ${i} with content type ${contentType ?? 'unknown'}:`,
+        error
+      );
+      this.updateMessageCopyTooltip(anchor, 'Copy failed');
+    }
+  }
+
   /**
    * Prevent mouse leave when user drag the overlay to resize it
    * Note this handler is not called on Safari. For some reason, Safari doesn't
@@ -2267,6 +2309,28 @@ export class EuphonyConversation extends LitElement {
         break;
       }
     }
+
+    template = html`
+      <div class="message-copy-wrapper" style=${inlineStyle}>
+        ${template}
+        <button
+          type="button"
+          class="message-copy-button svg-icon"
+          aria-label="Copy message content"
+          @mouseenter=${(e: MouseEvent) => {
+            this.toolButtonMouseEnter(e, 'message-copy');
+          }}
+          @mouseleave=${() => {
+            this.toolButtonMouseLeave();
+          }}
+          @click=${(e: MouseEvent) => {
+            void this.messageCopyButtonClicked(e, message, i);
+          }}
+        >
+          ${unsafeHTML(iconCopy)}
+        </button>
+      </div>
+    `;
 
     // Add message action controls in editor mode.
     if (this.isEditable) {
