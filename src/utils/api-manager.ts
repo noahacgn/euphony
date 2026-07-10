@@ -11,12 +11,9 @@ import type {
 } from '../types/common-types';
 import type { Conversation } from '../types/harmony-types';
 
-export let EUPHONY_API_URL =
-  (import.meta.env.VITE_EUPHONY_API_URL as string) || '/';
-
-if (import.meta.env.DEV) {
-  EUPHONY_API_URL = 'http://localhost:8020/';
-}
+export const EUPHONY_API_URL =
+  (import.meta.env.VITE_EUPHONY_API_URL as string) ||
+  (import.meta.env.DEV ? 'http://localhost:18020/' : '/');
 
 // The maximum number of lines in a JSONL file to read in frontend-only mode
 const FRONTEND_ONLY_MODE_MAX_LINES = 100;

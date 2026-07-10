@@ -4,7 +4,17 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createServer } from 'vite';
 
-async function loadAPIManagerModule() {
+async function loadAPIManagerModule({ apiURL } = {}) {
+  const environmentVariableName = 'VITE_EUPHONY_API_URL';
+  const previousAPIURL = process.env[environmentVariableName];
+
+  // 每个测试显式控制 Vite 环境，避免开发者终端中的同名变量污染默认值断言。
+  if (apiURL === undefined) {
+    delete process.env[environmentVariableName];
+  } else {
+    process.env[environmentVariableName] = apiURL;
+  }
+
   const server = await createServer({
     appType: 'custom',
     configFile: false,
@@ -21,8 +31,27 @@ async function loadAPIManagerModule() {
     return await server.ssrLoadModule('/src/utils/api-manager.ts');
   } finally {
     await server.close();
+    if (previousAPIURL === undefined) {
+      delete process.env[environmentVariableName];
+    } else {
+      process.env[environmentVariableName] = previousAPIURL;
+    }
   }
 }
+
+test('development API URL honors the backend URL supplied by the launcher', async () => {
+  const { EUPHONY_API_URL } = await loadAPIManagerModule({
+    apiURL: 'http://127.0.0.1:18021/'
+  });
+
+  assert.equal(EUPHONY_API_URL, 'http://127.0.0.1:18021/');
+});
+
+test('development API URL defaults to the local backend port', async () => {
+  const { EUPHONY_API_URL } = await loadAPIManagerModule();
+
+  assert.equal(EUPHONY_API_URL, 'http://localhost:18020/');
+});
 
 test('APIManager reads local Codex projects, sessions, and detail through backend APIs', async () => {
   const { APIManager } = await loadAPIManagerModule();

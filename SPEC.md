@@ -50,7 +50,7 @@ pnpm run dev
 pnpm run build
 & 'D:\IdeaProjects\euphony\scripts\start-local.ps1'
 & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -Stop
-uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 18020 --reload
 uv run --with pytest pytest
 ```
 
@@ -170,7 +170,7 @@ Use `pnpm run build` as the required TypeScript and production build check.
 
 Manual browser verification is required for this feature because it changes the primary user flow:
 
-- Start backend on `127.0.0.1:8020`.
+- Start backend on `127.0.0.1:18020`.
 - Start Vite on `localhost:3000`.
 - Open the app and confirm it defaults to the local Codex sessions browser.
 - Confirm project list, session list, session detail rendering and manual refresh.

@@ -54,8 +54,8 @@ TRANSLATION_SEMAPHORE_ACQUIRE_TIMEOUT_S = 60
 LOCAL_CODEX_ALLOWED_ORIGINS = {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:8020",
-    "http://127.0.0.1:8020",
+    "http://localhost:18020",
+    "http://127.0.0.1:18020",
 }
 LOCAL_ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1"}
 

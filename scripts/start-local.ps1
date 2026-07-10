@@ -21,7 +21,7 @@ param(
   [switch]$ClearProxy,
   [string]$OpenAiApiKey = $env:OPEN_AI_API_KEY,
   [string]$HostAddress = '127.0.0.1',
-  [int]$BackendPort = 8020,
+  [int]$BackendPort = 18020,
   [int]$FrontendPort = 3000
 )
 
@@ -31,7 +31,8 @@ Set-StrictMode -Version Latest
 $ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $StatePath = Join-Path ([System.IO.Path]::GetTempPath()) 'euphony-local-dev.json'
 $FrontendUrl = "http://${HostAddress}:${FrontendPort}/"
-$BackendPingUrl = "http://${HostAddress}:${BackendPort}/ping/"
+$BackendUrl = "http://${HostAddress}:${BackendPort}/"
+$BackendPingUrl = "${BackendUrl}ping/"
 $EventSubscriptions = New-Object System.Collections.Generic.List[object]
 
 # 统一输出前缀，方便从前后端日志里区分脚本自己的状态消息。
@@ -111,6 +112,66 @@ function Assert-RequiredCommand {
 
   if (-not (Get-Command -Name $Name -ErrorAction SilentlyContinue)) {
     throw "找不到命令 $Name。请先安装 $Name，并确认它在当前 PowerShell 的 PATH 中。"
+  }
+}
+
+function Resolve-ListenIPAddress {
+  param([Parameter(Mandatory = $true)][string]$Address)
+
+  $parsedAddress = $null
+  if ([System.Net.IPAddress]::TryParse($Address, [ref]$parsedAddress)) {
+    return $parsedAddress
+  }
+
+  try {
+    $resolvedAddresses = @([System.Net.Dns]::GetHostAddresses($Address))
+  } catch {
+    throw "无法解析监听地址 ${Address}。请通过 -HostAddress 指定有效的本机 IP 地址。"
+  }
+
+  # 主流程使用 IPv4 回环地址；主机名同时解析出 IPv4/IPv6 时优先匹配这个监听方式。
+  $resolvedAddress = $resolvedAddresses |
+    Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } |
+    Select-Object -First 1
+  if ($null -eq $resolvedAddress) {
+    $resolvedAddress = $resolvedAddresses | Select-Object -First 1
+  }
+  if ($null -eq $resolvedAddress) {
+    throw "监听地址 ${Address} 没有可用的 IP。请通过 -HostAddress 指定有效的本机 IP 地址。"
+  }
+
+  return $resolvedAddress
+}
+
+function Assert-TcpPortAvailable {
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string]$Address,
+    [Parameter(Mandatory = $true)][int]$Port,
+    [Parameter(Mandatory = $true)][string]$PortParameterName
+  )
+
+  $listenAddress = Resolve-ListenIPAddress -Address $Address
+  $listener = $null
+  try {
+    # 先做一次真实 bind，能同时识别普通占用和 Windows 排除端口范围导致的 10013。
+    $listener = [System.Net.Sockets.TcpListener]::new($listenAddress, $Port)
+    $listener.Start()
+  } catch {
+    $socketError = $_.Exception
+    while ($null -ne $socketError.InnerException) {
+      $socketError = $socketError.InnerException
+    }
+
+    if ($socketError -isnot [System.Net.Sockets.SocketException]) {
+      throw
+    }
+
+    throw "${Name}端口 ${Address}:$Port 不可用（套接字错误 $($socketError.ErrorCode)）。请释放该端口，或通过 -$PortParameterName 指定其他可用端口。"
+  } finally {
+    if ($null -ne $listener) {
+      $listener.Stop()
+    }
   }
 }
 
@@ -265,7 +326,7 @@ function Save-State {
     projectRoot = $ProjectRoot
     backendPid = $BackendProcess.Id
     frontendPid = $FrontendProcess.Id
-    backendUrl = "http://${HostAddress}:${BackendPort}/"
+    backendUrl = $BackendUrl
     frontendUrl = $FrontendUrl
     createdAt = (Get-Date).ToString('o')
   } | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding UTF8
@@ -296,6 +357,16 @@ if ($Stop) {
 Assert-NoRecordedService
 Assert-RequiredCommand -Name 'uv'
 Assert-RequiredCommand -Name 'pnpm'
+Assert-TcpPortAvailable `
+  -Name '后端' `
+  -Address $HostAddress `
+  -Port $BackendPort `
+  -PortParameterName 'BackendPort'
+Assert-TcpPortAvailable `
+  -Name '前端' `
+  -Address $HostAddress `
+  -Port $FrontendPort `
+  -PortParameterName 'FrontendPort'
 
 if (-not $SkipInstall) {
   Invoke-ProjectCommand -DisplayName '同步 Python 依赖：uv sync' -Command { uv sync }
@@ -325,6 +396,7 @@ $backendCommandLines.Add(
   "uv run uvicorn fastapi-main:app --app-dir server --host $HostAddress --port $BackendPort --reload"
 ) | Out-Null
 $backendCommand = $backendCommandLines -join "`r`n"
+$backendUrlLiteral = ConvertTo-PowerShellLiteral -Value $BackendUrl
 
 if ($ClearProxy) {
   # OpenAI Python 客户端会读取代理环境变量；无 socksio 时清理 SOCKS 代理可避免导入失败。
@@ -343,6 +415,7 @@ $frontendCommand = @"
 `$ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $rootLiteral
 `$env:VITE_EUPHONY_FRONTEND_ONLY = 'false'
+`$env:VITE_EUPHONY_API_URL = $backendUrlLiteral
 pnpm exec vite --host $HostAddress --port $FrontendPort --strictPort
 "@
 

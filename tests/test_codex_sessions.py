@@ -1369,6 +1369,19 @@ def test_codex_session_api_rejects_cross_site_origins(
         == "http://localhost:3000"
     )
 
+    backend_origin_response = client.get(
+        "/codex-sessions/projects/",
+        headers={
+            "Origin": "http://127.0.0.1:18020",
+            "Host": "127.0.0.1:18020",
+        },
+    )
+    assert backend_origin_response.status_code == 200
+    assert (
+        backend_origin_response.headers["access-control-allow-origin"]
+        == "http://127.0.0.1:18020"
+    )
+
     local_delete_origin_response = client.request(
         "DELETE",
         "/codex-sessions/sessions/",

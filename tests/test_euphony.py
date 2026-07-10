@@ -16,6 +16,6 @@ def test_readme_documents_local_codex_browser_startup() -> None:
     assert "本地 Codex sessions 浏览器不需要 `OPEN_AI_API_KEY`" in readme
     assert "function eu" in readme
     assert (
-        "uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload"
+        "uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 18020 --reload"
         in readme
     )

@@ -126,7 +126,13 @@ PowerShell 一键启动：
 & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy
 ```
 
-这个脚本可以从任意当前目录运行，会同时启动本地 FastAPI 后端和 Vite 前端，等待服务就绪后自动打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)。按 `Ctrl+C` 会同时停止前后端；如果终端被直接关闭，可以再次运行：
+这个脚本可以从任意当前目录运行，会同时启动 `127.0.0.1:18020` 上的 FastAPI 后端和 `127.0.0.1:3000` 上的 Vite 前端，等待服务就绪后自动打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)。脚本会在启动前检查端口；如果默认后端端口在本机不可用，可以通过 `-BackendPort` 指定其他端口，前端会自动使用同一地址：
+
+```powershell
+& 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy -BackendPort 18021
+```
+
+按 `Ctrl+C` 会同时停止前后端；如果终端被直接关闭，可以再次运行：
 
 ```powershell
 & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -Stop
@@ -162,7 +168,7 @@ function eustop {
 
 ```powershell
 uv sync
-uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 18020 --reload
 ```
 
 另开一个终端启动前端：
@@ -186,14 +192,14 @@ Start the backend server:
 ```bash
 pnpm install
 uv sync
-OPEN_AI_API_KEY=your-local-openai-api-key uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+OPEN_AI_API_KEY=your-local-openai-api-key uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 18020 --reload
 ```
 
 In PowerShell, set the backend API key before starting the server:
 
 ```powershell
 $env:OPEN_AI_API_KEY = 'your-local-openai-api-key'
-uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 8020 --reload
+uv run uvicorn fastapi-main:app --app-dir server --host 127.0.0.1 --port 18020 --reload
 ```
 
 Start the frontend development server:
