@@ -22,7 +22,7 @@ param(
   [string]$OpenAiApiKey = $env:OPEN_AI_API_KEY,
   [string]$HostAddress = '127.0.0.1',
   [int]$BackendPort = 18020,
-  [int]$FrontendPort = 3000
+  [int]$FrontendPort = 43127
 )
 
 $ErrorActionPreference = 'Stop'

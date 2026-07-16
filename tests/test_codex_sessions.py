@@ -1337,7 +1337,7 @@ def test_codex_session_api_rejects_cross_site_origins(
     blocked_host_response = client.get(
         "/codex-sessions/projects/",
         headers={
-            "Origin": "http://localhost:3000",
+            "Origin": "http://localhost:43127",
             "Host": "example.com",
         },
     )
@@ -1349,7 +1349,7 @@ def test_codex_session_api_rejects_cross_site_origins(
         "/codex-sessions/sessions/",
         json={"sessionIds": ["blocked-session"]},
         headers={
-            "Origin": "http://localhost:3000",
+            "Origin": "http://localhost:43127",
             "Host": "example.com",
         },
     )
@@ -1359,15 +1359,25 @@ def test_codex_session_api_rejects_cross_site_origins(
     local_origin_response = client.get(
         "/codex-sessions/projects/",
         headers={
-            "Origin": "http://localhost:3000",
+            "Origin": "http://localhost:43127",
             "Host": "127.0.0.1:8020",
         },
     )
     assert local_origin_response.status_code == 200
     assert (
         local_origin_response.headers["access-control-allow-origin"]
-        == "http://localhost:3000"
+        == "http://localhost:43127"
     )
+
+    obsolete_local_origin_response = client.get(
+        "/codex-sessions/projects/",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Host": "127.0.0.1:8020",
+        },
+    )
+    assert obsolete_local_origin_response.status_code == 403
+    assert "local origin" in obsolete_local_origin_response.json()["detail"]
 
     backend_origin_response = client.get(
         "/codex-sessions/projects/",
@@ -1387,7 +1397,7 @@ def test_codex_session_api_rejects_cross_site_origins(
         "/codex-sessions/sessions/",
         json={"sessionIds": []},
         headers={
-            "Origin": "http://localhost:3000",
+            "Origin": "http://localhost:43127",
             "Host": "127.0.0.1:8020",
         },
     )

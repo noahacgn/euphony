@@ -166,7 +166,7 @@
     - [x] `uv run --with pytest python -m pytest`
     - [x] `node --test --test-concurrency=1 tests/frontend/api-manager.codex-sessions.test.mjs tests/frontend/local-codex-browser.test.mjs tests/frontend/local-data-worker.test.mjs`
     - [x] `pnpm run build`
-    - [x] Manual browser check at `http://localhost:3000/`
+    - [x] Manual browser check at `http://localhost:43127/`
   - Files:
     - `README.md` if run instructions need updating
     - `SPEC.md` if scope decisions changed

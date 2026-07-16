@@ -19,7 +19,7 @@
 
 ### Success Criteria
 
-- 启动本地 FastAPI 后端和 Vite 前端后，访问 `http://localhost:3000/` 默认进入本地 Codex sessions 浏览器。
+- 启动本地 FastAPI 后端和 Vite 前端后，访问 `http://localhost:43127/` 默认进入本地 Codex sessions 浏览器。
 - 后端能扫描 active sessions 和 archived sessions，并返回至少包含项目列表、session 摘要、单个 session 完整内容，以及永久删除入口的 API。
 - 使用真实本机 `~/.codex` 或 `CODEX_HOME` 数据验证：可以列出项目、列出项目内 sessions、打开至少一个 session 并渲染内容。
 - 归档 sessions 会出现在列表中，并带有明确的 archived 状态。
@@ -171,7 +171,7 @@ Use `pnpm run build` as the required TypeScript and production build check.
 Manual browser verification is required for this feature because it changes the primary user flow:
 
 - Start backend on `127.0.0.1:18020`.
-- Start Vite on `localhost:3000`.
+- Start Vite on `localhost:43127`.
 - Open the app and confirm it defaults to the local Codex sessions browser.
 - Confirm project list, session list, session detail rendering and manual refresh.
 - Confirm URL/file/clipboard loading remains accessible.

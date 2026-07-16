@@ -52,8 +52,8 @@ MAX_PUBLIC_JSON_BYTES = 25 * 1024 * 1024
 TRANSLATION_MAX_CONCURRENCY = 1024
 TRANSLATION_SEMAPHORE_ACQUIRE_TIMEOUT_S = 60
 LOCAL_CODEX_ALLOWED_ORIGINS = {
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
+    "http://localhost:43127",
+    "http://127.0.0.1:43127",
     "http://localhost:18020",
     "http://127.0.0.1:18020",
 }

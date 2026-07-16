@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import socket
 import subprocess
@@ -10,6 +11,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 START_SCRIPT = PROJECT_ROOT / "scripts" / "start-local.ps1"
+PACKAGE_MANIFEST = PROJECT_ROOT / "package.json"
 
 
 def test_start_local_defaults_to_backend_port_18020() -> None:
@@ -17,6 +19,20 @@ def test_start_local_defaults_to_backend_port_18020() -> None:
 
     # 默认端口是启动脚本的用户接口；锁定该值可防止前后端默认地址再次漂移。
     assert "[int]$BackendPort = 18020" in script
+
+
+def test_start_local_defaults_to_frontend_port_43127() -> None:
+    script = START_SCRIPT.read_text(encoding="utf-8")
+
+    # 一键启动与手动开发应使用同一个冷门端口，避免默认端口再次被常见服务占用。
+    assert "[int]$FrontendPort = 43127" in script
+
+
+def test_frontend_dev_command_defaults_to_port_43127() -> None:
+    package_manifest = json.loads(PACKAGE_MANIFEST.read_text(encoding="utf-8"))
+
+    # 锁定开发命令的可观察默认值，使 README 中的手动启动流程与一键脚本保持一致。
+    assert package_manifest["scripts"]["dev"] == "vite --port 43127"
 
 
 def test_start_local_rejects_occupied_backend_port_before_spawning_processes() -> None:

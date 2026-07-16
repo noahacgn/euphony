@@ -305,7 +305,7 @@ The work is sliced around user-visible paths:
 
 - [ ] `pytest`
 - [ ] `pnpm run build`
-- [ ] Manual browser check at `http://localhost:3000/`
+- [ ] Manual browser check at `http://localhost:43127/`
 
 **Dependencies:** Tasks 1-7
 

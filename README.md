@@ -126,7 +126,7 @@ PowerShell 一键启动：
 & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy
 ```
 
-这个脚本可以从任意当前目录运行，会同时启动 `127.0.0.1:18020` 上的 FastAPI 后端和 `127.0.0.1:3000` 上的 Vite 前端，等待服务就绪后自动打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)。脚本会在启动前检查端口；如果默认后端端口在本机不可用，可以通过 `-BackendPort` 指定其他端口，前端会自动使用同一地址：
+这个脚本可以从任意当前目录运行，会同时启动 `127.0.0.1:18020` 上的 FastAPI 后端和 `127.0.0.1:43127` 上的 Vite 前端，等待服务就绪后自动打开 [http://127.0.0.1:43127/](http://127.0.0.1:43127/)。脚本会在启动前检查端口；如果默认后端端口在本机不可用，可以通过 `-BackendPort` 指定其他端口，前端会自动使用同一后端地址：
 
 ```powershell
 & 'D:\IdeaProjects\euphony\scripts\start-local.ps1' -ClearProxy -BackendPort 18021
@@ -180,7 +180,7 @@ pnpm run dev
 
 如果本机设置了 SOCKS 代理并看到 `socksio` 相关错误，请在启动后端的终端里临时清理 `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` 等代理环境变量，或安装支持 SOCKS 的 `httpx` 运行环境。
 
-访问 [http://localhost:3000/](http://localhost:3000/) 后，应用默认显示本地 Codex sessions 浏览器。URL、剪贴板和本地 `.json` / `.jsonl` 文件加载入口仍然保留。
+访问 [http://localhost:43127/](http://localhost:43127/) 后，应用默认显示本地 Codex sessions 浏览器。URL、剪贴板和本地 `.json` / `.jsonl` 文件加载入口仍然保留。
 
 ## Development
 
@@ -214,7 +214,7 @@ To force frontend-only mode with Vite:
 VITE_EUPHONY_FRONTEND_ONLY=true pnpm run dev
 ```
 
-Visit [http://localhost:3000/](http://localhost:3000/), you should see Euphony running in your browser!
+Visit [http://localhost:43127/](http://localhost:43127/), you should see Euphony running in your browser!
 
 To build the static frontend:
 
