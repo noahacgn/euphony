@@ -96,7 +96,6 @@ import componentCSS from './conversation.css?inline';
 
 const METADATA_MIN_HEIGHT = 500;
 const TRANSLATION_TIMEOUT = 600000;
-const MAX_MESSAGE_COUNT = 8000;
 type CustomMessageLabel =
   | [number | string, string]
   | [number | string, string, string]
@@ -2711,29 +2710,6 @@ export class EuphonyConversation extends LitElement {
 
       if (this.isShowingTranslation && this.conversation.translatedMessages) {
         curMessages = this.conversation.translatedMessages;
-      }
-
-      if (curMessages.length > MAX_MESSAGE_COUNT) {
-        // Insert a message to the front before slicing to 3000
-        const insertedMessage: Message = {
-          role: Role.Tool,
-          name: 'Euphony',
-          content: [
-            {
-              text:
-                `This conversation is truncated to ${MAX_MESSAGE_COUNT} messages ` +
-                `from the bottom (total: ${curMessages.length}).`
-            }
-          ],
-          recipient: 'all',
-          channel: undefined,
-          metadata: {}
-        };
-        curMessages = [
-          insertedMessage,
-          ...curMessages.slice(0, MAX_MESSAGE_COUNT),
-          insertedMessage
-        ];
       }
 
       for (const [i, message] of curMessages.entries()) {
