@@ -115,11 +115,15 @@ export const isCodexSessionJSONL = (raw: unknown[]): boolean => {
   if (events.length === 0) {
     return false;
   }
-  if (events.length / raw.length < 0.6) {
-    return false;
-  }
+
+  // session_meta 是 Codex rollout 的明确会话标记。新版本 CLI 会持续增加事件类型，
+  // 因此不能让未知事件的数量因为比例门槛把一个明确的 Codex 会话误判成普通 JSONL。
   if (events.some(event => event.type === 'session_meta')) {
     return true;
+  }
+
+  if (events.length / raw.length < 0.6) {
+    return false;
   }
 
   const knownTopLevelCount = events.filter(event =>

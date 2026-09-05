@@ -19,7 +19,9 @@ async function loadLocalDataWorkerModule() {
 
   globalThis.self = {};
   try {
-    return await server.ssrLoadModule('/src/components/app/local-data-worker.ts');
+    return await server.ssrLoadModule(
+      '/src/components/app/local-data-worker.ts'
+    );
   } finally {
     globalThis.self = originalSelf;
     await server.close();
@@ -89,6 +91,31 @@ test('parseLocalData routes manually uploaded Codex JSONL to the Codex renderer 
 
   assert.equal(result.dataType, 'codex');
   assert.equal(result.codexSessionData.length, 2);
+});
+
+test('包含未知事件的 Codex JSONL 上传后仍进入会话渲染流程', async () => {
+  const { parseLocalData } = await loadLocalDataWorkerModule();
+  // 文件上传与本地会话共用格式识别；未知事件不能让上传结果退回普通 JSON 查看器。
+  const events = [
+    { type: 'session_meta', payload: { id: 'session-new-events' } },
+    {
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: '请显示上传的会话' }]
+      }
+    },
+    { type: 'token_usage_record', payload: {} },
+    { type: 'event_msg', payload: { type: 'item_completed' } }
+  ];
+
+  const result = parseLocalData(
+    events.map(event => JSON.stringify(event)).join('\n')
+  );
+
+  assert.equal(result.dataType, 'codex');
+  assert.deepEqual(result.codexSessionData, events);
 });
 
 test('parseLocalData falls back to JSON viewer data for non-conversation JSON', async () => {
